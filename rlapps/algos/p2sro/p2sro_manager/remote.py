@@ -241,6 +241,21 @@ class RemoteP2SROManagerClient(P2SROManager):
     def submit_new_active_policy_metadata(
         self, player, policy_num, metadata_dict
     ) -> StrategySpec:
+        """Submit active policy to remote manager server. Note you may need \
+            to check whether this active policy can be fixed before submission.
+
+        Args:
+            player (int): Player identifier.
+            policy_num (int): The number of policy supports.
+            metadata_dict (Dict[str, Any]): Policy related meta dict.
+
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            StrategySpec: _description_
+        """
+
         try:
             metadata_json = json.dumps(obj=metadata_dict)
         except (TypeError, OverflowError) as json_err:

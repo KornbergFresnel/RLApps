@@ -1,20 +1,33 @@
 import json
 import logging
-import traceback
 from concurrent import futures
-from typing import Tuple, List, Dict, Callable, Union
+from typing import Tuple, List, Dict, Callable, Union, Any
 
 import grpc
-from google.protobuf.empty_pb2 import Empty
+
+from ray.rllib.agents import Trainer
+from ray.rllib.evaluation import RolloutWorker
 
 from rlapps.utils.strategy_spec import StrategySpec
 from rlapps.algos.psro_distill.manager.manager import PSRODistillManager
-from rlapps.algos.psro_distill.manager.protobuf.manager_pb2 import *
+from rlapps.algos.psro_distill.manager.protobuf.manager_pb2_grpc import (
+    PSRODistillManagerStub,
+    add_PSRODistillManagerServicer_to_server,
+)
+from rlapps.algos.p2sro.p2sro_manager.protobuf import p2sro_manager_pb2 as psro_proto
+from rlapps.algos.psro_distill.manager.protobuf import manager_pb2 as psro_distill_proto
 from rlapps.algos.psro_distill.manager.protobuf.manager_pb2_grpc import (
     PSRODistillManagerServicer,
-    add_PSRODistillManagerServicer_to_server,
-    PSRODistillManagerStub,
 )
+from rlapps.algos.p2sro.p2sro_manager.remote import (
+    RemoteP2SROManagerClient,
+    _P2SROMangerServerServicerImpl,
+)
+from rlapps.algos.p2sro.p2sro_manager.utils import (
+    get_latest_metanash_strategies,
+    PolicySpecDistribution,
+)
+
 
 GRPC_MAX_MESSAGE_LENGTH = 1048576 * 40  # 40MiB
 
@@ -22,94 +35,46 @@ logger = logging.getLogger(__name__)
 
 
 class _PSRODistillMangerServerServicerImpl(PSRODistillManagerServicer):
-    def __init__(self, manager: PSRODistillManager, stop_server_fn: Callable):
+    def __init__(self, manager: PSRODistillManager):
         self._manager = manager
-        self._stop_server_fn = stop_server_fn
+        _P2SROMangerServerServicerImpl.__init__(self, manager)
 
-    def GetLogDir(self, request, context):
-        return PSRODistillString(string=self._manager.get_log_dir())
-
-    def GetManagerMetaData(self, request, context):
-        metadata = self._manager.get_manager_metadata()
-        return PSRODistillMetadata(json_metadata=json.dumps(metadata))
-
-    def ClaimNewActivePolicyForPlayer(self, request: PSRODistillPlayer, context):
-        out = self._manager.claim_new_active_policy_for_player(player=request.player)
-
-        metanash_specs_for_players, delegate_specs_for_players, policy_num = out
-
-        assert len(metanash_specs_for_players) == self._manager.n_players()
-        assert len(delegate_specs_for_players) == self._manager.n_players()
-
-        if policy_num is None:
-            return PSRODistillNewBestResponseParams(policy_num=-1)
-
-        response = PSRODistillNewBestResponseParams(policy_num=policy_num)
-
-        for player, spec_for_player in metanash_specs_for_players.items():
-            if spec_for_player is not None:
-                response.metanash_specs_for_players.policy_spec_list.append(
-                    PSRODistillPolicySpecJson(
-                        policy_spec_json=spec_for_player.to_json()
-                    )
-                )
-
-        response_delegate_spec_lists_for_other_players = []
-        for player, player_delegate_spec_list in delegate_specs_for_players.items():
-            player_delegate_json_spec_list = PSRODistillPolicySpecList()
-            player_delegate_json_spec_list.policy_spec_list.extend(
-                [
-                    PSRODistillPolicySpecJson(policy_spec_json=spec.to_json())
-                    for spec in player_delegate_spec_list
-                ]
-            )
-            response_delegate_spec_lists_for_other_players.append(
-                player_delegate_json_spec_list
-            )
-        response.delegate_specs_for_players.extend(
-            response_delegate_spec_lists_for_other_players
-        )
-
-        return response
-
-    def SubmitFinalBRPolicy(self, request: PSRODistillPolicyMetadataRequest, context):
-        with self._manager.modification_lock:
-            try:
-                self._manager.submit_final_br_policy(
-                    player=request.player,
-                    policy_num=request.policy_num,
-                    metadata_dict=json.loads(request.metadata_json),
-                )
-            except Exception as err:
-                print(f"{type(err)}: {err}")
-                traceback.print_exc()
-                print("Submitting BR failed, shutting down manager.")
-                self._stop_server_fn()
-
-        return PSRODistillConfirmation(result=True)
-
-    def IsPolicyFixed(self, request: PSRODistillPlayerAndPolicyNum, context):
-        is_policy_fixed = self._manager.is_policy_fixed(
-            player=request.player, policy_num=request.policy_num
-        )
-        return PSRODistillConfirmation(result=is_policy_fixed)
+    def GetDistilledMetaNash(
+        self, request: psro_distill_proto.PolicySpecJsonList, context
+    ):
+        prob_list = request.policy_prob_list
+        strategy_spec_list = json.load(request.policy_spec_json_list)
+        # parse json
+        result = self._manager.distill_meta_nash(prob_list, strategy_spec_list)
+        return psro_proto.PolicySpecJson(policy_spec_json=result.to_json())
 
 
 class PSRODistillManagerWithServer(PSRODistillManager):
     def __init__(
         self,
-        solve_restricted_game: SolveRestrictedGame,
-        n_players: int = 2,
+        n_players: int,
+        is_two_player_symmetric_zero_sum: bool,
+        do_external_payoff_evals_for_new_fixed_policies: bool,
+        games_per_external_payoff_eval: int,
+        eval_dispatcher_port: int = 4536,
+        payoff_table_exponential_average_coeff: float = None,
+        get_manager_logger=None,
         log_dir: str = None,
         manager_metadata: dict = None,
-        port: int = 4545,
+        port: int = 4535,
     ):
-        super(PSRODistillManagerWithServer, self).__init__(
-            solve_restricted_game=solve_restricted_game,
-            n_players=n_players,
-            log_dir=log_dir,
-            manager_metadata=manager_metadata,
+        super().__init__(
+            n_players,
+            is_two_player_symmetric_zero_sum,
+            do_external_payoff_evals_for_new_fixed_policies,
+            games_per_external_payoff_eval,
+            eval_dispatcher_port,
+            payoff_table_exponential_average_coeff,
+            get_manager_logger,
+            log_dir,
+            manager_metadata,
         )
+
         self._grpc_server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=1),
             options=[
@@ -117,6 +82,7 @@ class PSRODistillManagerWithServer(PSRODistillManager):
                 ("grpc.max_receive_message_length", GRPC_MAX_MESSAGE_LENGTH),
             ],
         )
+
         servicer = _PSRODistillMangerServerServicerImpl(
             manager=self, stop_server_fn=self.stop_server
         )
@@ -135,10 +101,16 @@ class PSRODistillManagerWithServer(PSRODistillManager):
         self._grpc_server.stop(grace=0)
 
 
-class RemotePSRODistillManagerClient(PSRODistillManager):
+class RemotePSRODistillManagerClient(RemoteP2SROManagerClient):
+    """
+    GRPC client for a PSRODistillManager server.
+    Behaves exactly like a local PSRODistillManager but actually is connecting to a remote PSRODistill Manager on another
+    process or computer.
+    """
 
-    # noinspection PyMissingConstructor
-    def __init__(self, n_players, port=4545, remote_server_host="127.0.0.1"):
+    def __init__(
+        self, n_players: int, port: int = 4535, remote_server_host: str = "127.0.0.1"
+    ):
         self._stub = PSRODistillManagerStub(
             channel=grpc.insecure_channel(
                 target=f"{remote_server_host}:{port}",
@@ -148,90 +120,86 @@ class RemotePSRODistillManagerClient(PSRODistillManager):
                 ],
             )
         )
+        server_is_same_num_players: psro_proto.Confirmation = (
+            self._stub.CheckNumPlayers(psro_proto.NumPlayers(num_players=n_players))
+        )
+        if not server_is_same_num_players.result:
+            raise ValueError(
+                "Remote P2SROManger server has a different number of players than this one."
+            )
         self._n_players = n_players
 
-    def n_players(self) -> int:
-        return self._n_players
+    def distill_meta_nash(self, prob_to_strategy_specs: Dict[float, StrategySpec]):
+        probs = list(prob_to_strategy_specs.keys())
+        specs = list(prob_to_strategy_specs.values())
 
-    def get_log_dir(self) -> str:
-        return self._stub.GetLogDir(Empty()).string
-
-    def get_manager_metadata(self) -> dict:
-        response: PSRODistillMetadata = self._stub.GetManagerMetaData(Empty())
-        return json.loads(response.json_metadata)
-
-    def claim_new_active_policy_for_player(
-        self, player
-    ) -> Union[
-        Tuple[Dict[int, StrategySpec], Dict[int, List[StrategySpec]], int],
-        Tuple[None, None, None],
-    ]:
-        request = PSRODistillPlayer(player=player)
-        response: PSRODistillNewBestResponseParams = (
-            self._stub.ClaimNewActivePolicyForPlayer(request)
+        request = psro_distill_proto.PolicySpecJsonList(
+            policy_prob_list=probs, policy_spec_json_list=json.dump(specs)
         )
 
-        if response.policy_num == -1:
-            return None, None, None
+        results = self._stub.GetDistilledMetaNash(request)
+        return results
 
-        assert len(response.metanash_specs_for_players.policy_spec_list) in [
-            self.n_players(),
-            0,
-        ]
-        assert len(response.delegate_specs_for_players) in [self.n_players(), 0]
 
-        metanash_json_specs_for_other_players = [
-            elem.policy_spec_json
-            for elem in response.metanash_specs_for_players.policy_spec_list
-        ]
+def update_all_workers_to_latest_metanash(
+    trainer: Trainer,
+    br_player: int,
+    metanash_player: int,
+    p2sro_manager: RemotePSRODistillManagerClient,
+    active_policy_num: int,
+    mix_metanash_with_uniform_dist_coeff: float,
+    one_agent_plays_all_sides: bool = False,
+):
+    (
+        latest_payoff_table,
+        active_policy_nums,
+        fixed_policy_nums,
+    ) = p2sro_manager.get_copy_of_latest_data()
+    latest_strategies: Dict[
+        int, PolicySpecDistribution
+    ] = get_latest_metanash_strategies(
+        payoff_table=latest_payoff_table,
+        as_player=1 if one_agent_plays_all_sides else br_player,
+        as_policy_num=active_policy_num,
+        fictitious_play_iters=2000,
+        mix_with_uniform_dist_coeff=mix_metanash_with_uniform_dist_coeff,
+    )
 
-        metanash_specs_for_players = {
-            player: StrategySpec.from_json(json_spec)
-            for player, json_spec in enumerate(metanash_json_specs_for_other_players)
-        }
-
-        delegate_json_spec_lists_for_other_players = [
-            [elem.policy_spec_json for elem in player_delegate_list.policy_spec_list]
-            for player_delegate_list in response.delegate_specs_for_players
-        ]
-        delegate_specs_for_players = {
-            player: [
-                StrategySpec.from_json(json_spec)
-                for json_spec in player_delegate_json_list
-            ]
-            for player, player_delegate_json_list in enumerate(
-                delegate_json_spec_lists_for_other_players
-            )
-        }
-
-        if len(metanash_specs_for_players) == 0:
-            metanash_specs_for_players = None
-
-        if len(delegate_specs_for_players) == 0:
-            delegate_specs_for_players = None
-
-        return (
-            metanash_specs_for_players,
-            delegate_specs_for_players,
-            response.policy_num,
+    if latest_strategies is None:
+        opponent_policy_distribution = None
+    else:
+        opponent_player = 0 if one_agent_plays_all_sides else metanash_player
+        print(
+            f"latest payoff matrix for player {opponent_player}:\n"
+            f"{latest_payoff_table.get_payoff_matrix_for_player(player=opponent_player)}"
+        )
+        print(
+            f"metanash for player {opponent_player}: "
+            f"{latest_strategies[opponent_player].probabilities_for_each_strategy()}"
         )
 
-    def submit_final_br_policy(self, player, policy_num, metadata_dict):
-        try:
-            metadata_json = json.dumps(obj=metadata_dict)
-        except (TypeError, OverflowError) as json_err:
-            raise ValueError(
-                f"metadata_dict must be JSON serializable."
-                f"When attempting to serialize, got this error:\n{json_err}"
-            )
+        # get the strategy distribution for the opposing player.
+        opponent_policy_distribution = latest_strategies[opponent_player]
 
-        request = PSRODistillPolicyMetadataRequest(
-            player=player, policy_num=policy_num, metadata_json=metadata_json
+        # double check that these policy specs are for the opponent player
+        assert (
+            opponent_player
+            in opponent_policy_distribution.sample_policy_spec()
+            .get_pure_strat_indexes()
+            .keys()
         )
-        self._stub.SubmitFinalBRPolicy(request)
 
-    def is_policy_fixed(self, player, policy_num):
-        response: PSRODistillConfirmation = self._stub.IsPolicyFixed(
-            PSRODistillPlayerAndPolicyNum(player=player, policy_num=policy_num)
-        )
-        return response.result
+    # TODO(ming): send training request to manager
+    prob_to_strategy_specs: Dict[float, StrategySpec] = latest_payoff_table[
+        opponent_player
+    ].probs_to_specs
+
+    distilled_strategy_spec_json = p2sro_manager.distill_meta_nash(
+        prob_to_strategy_specs
+    )
+
+    def _set_opponent_policy_for_worker(worker: RolloutWorker):
+        worker.opponent_policy = StrategySpec.from_json(distilled_strategy_spec_json)
+
+    # update all workers with newest meta policy
+    trainer.workers.foreach_worker(_set_opponent_policy_for_worker)

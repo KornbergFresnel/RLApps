@@ -4,6 +4,9 @@ import grpc
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 import manager_pb2 as manager__pb2
+from p2sro.p2sro_manager.protobuf import (
+    p2sro_manager_pb2 as p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2,
+)
 
 
 class PSRODistillManagerStub(object):
@@ -15,37 +18,72 @@ class PSRODistillManagerStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.GetLogDir = channel.unary_unary(
-            "/PSRODistillManager/GetLogDir",
-            request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            response_deserializer=manager__pb2.PSRODistillString.FromString,
+        self.CheckNumPlayers = channel.unary_unary(
+            "/PSRODistillManager/CheckNumPlayers",
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.NumPlayers.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
         )
         self.GetManagerMetaData = channel.unary_unary(
             "/PSRODistillManager/GetManagerMetaData",
             request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            response_deserializer=manager__pb2.PSRODistillMetadata.FromString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Metadata.FromString,
+        )
+        self.GetLogDir = channel.unary_unary(
+            "/PSRODistillManager/GetLogDir",
+            request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.String.FromString,
         )
         self.ClaimNewActivePolicyForPlayer = channel.unary_unary(
             "/PSRODistillManager/ClaimNewActivePolicyForPlayer",
-            request_serializer=manager__pb2.PSRODistillPlayer.SerializeToString,
-            response_deserializer=manager__pb2.PSRODistillNewBestResponseParams.FromString,
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.NewActivePolicyRequest.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
         )
-        self.SubmitFinalBRPolicy = channel.unary_unary(
-            "/PSRODistillManager/SubmitFinalBRPolicy",
-            request_serializer=manager__pb2.PSRODistillPolicyMetadataRequest.SerializeToString,
-            response_deserializer=manager__pb2.PSRODistillConfirmation.FromString,
+        self.SubmitNewActivePolicyMetadata = channel.unary_unary(
+            "/PSRODistillManager/SubmitNewActivePolicyMetadata",
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicyMetadataRequest.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
+        )
+        self.CanActivePolicyBeSetAsFixedNow = channel.unary_unary(
+            "/PSRODistillManager/CanActivePolicyBeSetAsFixedNow",
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PlayerAndPolicyNum.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
         )
         self.IsPolicyFixed = channel.unary_unary(
             "/PSRODistillManager/IsPolicyFixed",
-            request_serializer=manager__pb2.PSRODistillPlayerAndPolicyNum.SerializeToString,
-            response_deserializer=manager__pb2.PSRODistillConfirmation.FromString,
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PlayerAndPolicyNum.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
+        )
+        self.SetActivePolicyAsFixed = channel.unary_unary(
+            "/PSRODistillManager/SetActivePolicyAsFixed",
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicyMetadataRequest.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
+        )
+        self.GetCopyOfLatestData = channel.unary_unary(
+            "/PSRODistillManager/GetCopyOfLatestData",
+            request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.P2SROStatusResponse.FromString,
+        )
+        self.SubmitEmpiricalPayoffResult = channel.unary_unary(
+            "/PSRODistillManager/SubmitEmpiricalPayoffResult",
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PayoffResult.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
+        )
+        self.RequestExternalEval = channel.unary_unary(
+            "/PSRODistillManager/RequestExternalEval",
+            request_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.EvalRequest.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
+        )
+        self.GetDistilledMetaNash = channel.unary_unary(
+            "/PSRODistillManager/GetDistilledMetaNash",
+            request_serializer=manager__pb2.PolicySpecJsonList.SerializeToString,
+            response_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
         )
 
 
 class PSRODistillManagerServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def GetLogDir(self, request, context):
+    def CheckNumPlayers(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
@@ -57,13 +95,25 @@ class PSRODistillManagerServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def GetLogDir(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
     def ClaimNewActivePolicyForPlayer(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
-    def SubmitFinalBRPolicy(self, request, context):
+    def SubmitNewActivePolicyMetadata(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def CanActivePolicyBeSetAsFixedNow(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
@@ -75,33 +125,98 @@ class PSRODistillManagerServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def SetActivePolicyAsFixed(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def GetCopyOfLatestData(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def SubmitEmpiricalPayoffResult(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def RequestExternalEval(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def GetDistilledMetaNash(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_PSRODistillManagerServicer_to_server(servicer, server):
     rpc_method_handlers = {
-        "GetLogDir": grpc.unary_unary_rpc_method_handler(
-            servicer.GetLogDir,
-            request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-            response_serializer=manager__pb2.PSRODistillString.SerializeToString,
+        "CheckNumPlayers": grpc.unary_unary_rpc_method_handler(
+            servicer.CheckNumPlayers,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.NumPlayers.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.SerializeToString,
         ),
         "GetManagerMetaData": grpc.unary_unary_rpc_method_handler(
             servicer.GetManagerMetaData,
             request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-            response_serializer=manager__pb2.PSRODistillMetadata.SerializeToString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Metadata.SerializeToString,
+        ),
+        "GetLogDir": grpc.unary_unary_rpc_method_handler(
+            servicer.GetLogDir,
+            request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.String.SerializeToString,
         ),
         "ClaimNewActivePolicyForPlayer": grpc.unary_unary_rpc_method_handler(
             servicer.ClaimNewActivePolicyForPlayer,
-            request_deserializer=manager__pb2.PSRODistillPlayer.FromString,
-            response_serializer=manager__pb2.PSRODistillNewBestResponseParams.SerializeToString,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.NewActivePolicyRequest.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.SerializeToString,
         ),
-        "SubmitFinalBRPolicy": grpc.unary_unary_rpc_method_handler(
-            servicer.SubmitFinalBRPolicy,
-            request_deserializer=manager__pb2.PSRODistillPolicyMetadataRequest.FromString,
-            response_serializer=manager__pb2.PSRODistillConfirmation.SerializeToString,
+        "SubmitNewActivePolicyMetadata": grpc.unary_unary_rpc_method_handler(
+            servicer.SubmitNewActivePolicyMetadata,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicyMetadataRequest.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.SerializeToString,
+        ),
+        "CanActivePolicyBeSetAsFixedNow": grpc.unary_unary_rpc_method_handler(
+            servicer.CanActivePolicyBeSetAsFixedNow,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PlayerAndPolicyNum.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.SerializeToString,
         ),
         "IsPolicyFixed": grpc.unary_unary_rpc_method_handler(
             servicer.IsPolicyFixed,
-            request_deserializer=manager__pb2.PSRODistillPlayerAndPolicyNum.FromString,
-            response_serializer=manager__pb2.PSRODistillConfirmation.SerializeToString,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PlayerAndPolicyNum.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.SerializeToString,
+        ),
+        "SetActivePolicyAsFixed": grpc.unary_unary_rpc_method_handler(
+            servicer.SetActivePolicyAsFixed,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicyMetadataRequest.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.SerializeToString,
+        ),
+        "GetCopyOfLatestData": grpc.unary_unary_rpc_method_handler(
+            servicer.GetCopyOfLatestData,
+            request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.P2SROStatusResponse.SerializeToString,
+        ),
+        "SubmitEmpiricalPayoffResult": grpc.unary_unary_rpc_method_handler(
+            servicer.SubmitEmpiricalPayoffResult,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PayoffResult.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.SerializeToString,
+        ),
+        "RequestExternalEval": grpc.unary_unary_rpc_method_handler(
+            servicer.RequestExternalEval,
+            request_deserializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.EvalRequest.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.SerializeToString,
+        ),
+        "GetDistilledMetaNash": grpc.unary_unary_rpc_method_handler(
+            servicer.GetDistilledMetaNash,
+            request_deserializer=manager__pb2.PolicySpecJsonList.FromString,
+            response_serializer=p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -115,7 +230,7 @@ class PSRODistillManager(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def GetLogDir(
+    def CheckNumPlayers(
         request,
         target,
         options=(),
@@ -130,9 +245,9 @@ class PSRODistillManager(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            "/PSRODistillManager/GetLogDir",
-            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            manager__pb2.PSRODistillString.FromString,
+            "/PSRODistillManager/CheckNumPlayers",
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.NumPlayers.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
             options,
             channel_credentials,
             insecure,
@@ -161,7 +276,36 @@ class PSRODistillManager(object):
             target,
             "/PSRODistillManager/GetManagerMetaData",
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            manager__pb2.PSRODistillMetadata.FromString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Metadata.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def GetLogDir(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/GetLogDir",
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.String.FromString,
             options,
             channel_credentials,
             insecure,
@@ -189,8 +333,8 @@ class PSRODistillManager(object):
             request,
             target,
             "/PSRODistillManager/ClaimNewActivePolicyForPlayer",
-            manager__pb2.PSRODistillPlayer.SerializeToString,
-            manager__pb2.PSRODistillNewBestResponseParams.FromString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.NewActivePolicyRequest.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
             options,
             channel_credentials,
             insecure,
@@ -202,7 +346,7 @@ class PSRODistillManager(object):
         )
 
     @staticmethod
-    def SubmitFinalBRPolicy(
+    def SubmitNewActivePolicyMetadata(
         request,
         target,
         options=(),
@@ -217,9 +361,38 @@ class PSRODistillManager(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            "/PSRODistillManager/SubmitFinalBRPolicy",
-            manager__pb2.PSRODistillPolicyMetadataRequest.SerializeToString,
-            manager__pb2.PSRODistillConfirmation.FromString,
+            "/PSRODistillManager/SubmitNewActivePolicyMetadata",
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicyMetadataRequest.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def CanActivePolicyBeSetAsFixedNow(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/CanActivePolicyBeSetAsFixedNow",
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PlayerAndPolicyNum.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
             options,
             channel_credentials,
             insecure,
@@ -247,8 +420,153 @@ class PSRODistillManager(object):
             request,
             target,
             "/PSRODistillManager/IsPolicyFixed",
-            manager__pb2.PSRODistillPlayerAndPolicyNum.SerializeToString,
-            manager__pb2.PSRODistillConfirmation.FromString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PlayerAndPolicyNum.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def SetActivePolicyAsFixed(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/SetActivePolicyAsFixed",
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicyMetadataRequest.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def GetCopyOfLatestData(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/GetCopyOfLatestData",
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.P2SROStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def SubmitEmpiricalPayoffResult(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/SubmitEmpiricalPayoffResult",
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PayoffResult.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def RequestExternalEval(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/RequestExternalEval",
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.EvalRequest.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.Confirmation.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def GetDistilledMetaNash(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/PSRODistillManager/GetDistilledMetaNash",
+            manager__pb2.PolicySpecJsonList.SerializeToString,
+            p2sro_dot_p2sro__manager_dot_protobuf_dot_p2sro__manager__pb2.PolicySpecJson.FromString,
             options,
             channel_credentials,
             insecure,

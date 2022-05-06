@@ -14,6 +14,7 @@ from ray.rllib.policy import Policy
 from ray.rllib.utils import merge_dicts, try_import_torch
 
 from rlapps.algos.p2sro.p2sro_manager import RemoteP2SROManagerClient
+from rlapps.algos.p2sro.p2sro_manager.p2sro_manager import P2SROManager
 from rlapps.algos.p2sro.p2sro_manager.utils import (
     get_latest_metanash_strategies,
     PolicySpecDistribution,
@@ -132,6 +133,7 @@ def update_all_workers_to_latest_metanash(
     def _set_opponent_policy_distribution_for_worker(worker: RolloutWorker):
         worker.opponent_policy_distribution = opponent_policy_distribution
 
+    # update all workers with newest meta policy
     trainer.workers.foreach_worker(_set_opponent_policy_distribution_for_worker)
 
 
@@ -327,7 +329,7 @@ def train_psro_best_response(
         else:
             raise ValueError(f"Unknown agent id: {agent_id}")
 
-    p2sro_manager = remote_manager_client(
+    p2sro_manager: RemoteP2SROManagerClient = remote_manager_client(
         n_players=2, port=psro_manager_port, remote_server_host=psro_manager_host
     )
     manager_metadata = p2sro_manager.get_manager_metadata()
@@ -463,6 +465,7 @@ def train_psro_best_response(
             else:
                 episodes_since_last_sync_with_manager = 0
 
+            # submit fixed active policy to manager, and update meta nash
             sync_active_policy_br_and_metanash_with_p2sro_manager(
                 trainer=trainer,
                 player=player,

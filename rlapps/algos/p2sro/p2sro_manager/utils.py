@@ -13,7 +13,7 @@ class PolicySpecDistribution(object):
         player: int,
         policy_selection_probs_indexed_by_policy_num: List[float],
     ):
-        self._probs_to_policy_specs = {
+        self._probs_to_policy_specs: Dict[float, StrategySpec] = {
             selection_prob: payoff_table.get_spec_for_player_and_pure_strat_index(
                 player=player, pure_strat_index=policy_num
             )
@@ -28,6 +28,10 @@ class PolicySpecDistribution(object):
             a=list(self._probs_to_policy_specs.values()),
             p=list(self._probs_to_policy_specs.keys()),
         )
+
+    @property
+    def probs_to_specs(self) -> Dict[float, StrategySpec]:
+        return self._probs_to_policy_specs
 
     def probabilities_for_each_strategy(self) -> np.ndarray:
         return np.asarray(list(self._probs_to_policy_specs.keys()), dtype=np.float64)

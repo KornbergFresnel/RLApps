@@ -5,10 +5,12 @@
 # and it will generate the new files in the protobuf folder in this script's directory
 
 THIS_SCRIPTS_DIR="`dirname \"$0\"`"
+PROTO_PATH=$1
 cd "$THIS_SCRIPTS_DIR" || (echo "Couldn't cd into $THIS_SCRIPTS_DIR" && exit)
 
 python3 -m grpc_tools.protoc \
   -I protobuf \
+  --proto_path ${PROTO_PATH} \
   --python_out protobuf \
   --grpc_python_out protobuf \
   protobuf/manager.proto
