@@ -178,6 +178,7 @@ def train_psro_best_response(
     psro_manager_host: str,
     print_train_results=True,
     previous_br_checkpoint_path=None,
+    remote_manager_client: Type = RemoteP2SROManagerClient,
 ) -> str:
 
     scenario: PSROScenario = scenario_catalog.get(scenario_name=scenario_name)
@@ -277,7 +278,7 @@ def train_psro_best_response(
                 return
 
             if not hasattr(worker, "p2sro_manager"):
-                worker.p2sro_manager = RemoteP2SROManagerClient(
+                worker.p2sro_manager = remote_manager_client(
                     n_players=2,
                     port=psro_manager_port,
                     remote_server_host=psro_manager_host,
@@ -326,7 +327,7 @@ def train_psro_best_response(
         else:
             raise ValueError(f"Unknown agent id: {agent_id}")
 
-    p2sro_manager = RemoteP2SROManagerClient(
+    p2sro_manager = remote_manager_client(
         n_players=2, port=psro_manager_port, remote_server_host=psro_manager_host
     )
     manager_metadata = p2sro_manager.get_manager_metadata()
