@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+message PSRODistillString {
+    string string = 1;
+}
+
+message PSRODistillPlayerAndPolicyNum {
+    int64 player = 1;
+    int64 policy_num = 2;
+}
+
+message PSRODistillPlayer {
+    int64 player = 1;
+}
+
+message PSRODistillPolicySpecJson {
+    string policy_spec_json = 1;
+}
+
+message PSRODistillPolicySpecList {
+    repeated PSRODistillPolicySpecJson policy_spec_list = 1;
+}
+
+message PSRODistillNewBestResponseParams {
+    PSRODistillPolicySpecList metanash_specs_for_players = 1;
+    repeated PSRODistillPolicySpecList delegate_specs_for_players = 2;
+    int64 policy_num = 3;
+}
+
+message PSRODistillPolicyMetadataRequest {
+    int64 player = 1;
+    int64 policy_num = 2;
+    string metadata_json = 3;
+}
+
+message PSRODistillConfirmation {
+    bool result = 1;
+}
+
+message PSRODistillMetadata {
+    string json_metadata = 1;
+}
+
+service PSRODistillManager {
+    rpc GetLogDir (google.protobuf.Empty) returns (PSRODistillString) {}
+    rpc GetManagerMetaData (google.protobuf.Empty) returns (PSRODistillMetadata) {}
+    rpc ClaimNewActivePolicyForPlayer (PSRODistillPlayer) returns (PSRODistillNewBestResponseParams) {}
+    rpc SubmitFinalBRPolicy (PSRODistillPolicyMetadataRequest) returns (PSRODistillConfirmation) {}
+    rpc IsPolicyFixed (PSRODistillPlayerAndPolicyNum) returns (PSRODistillConfirmation) {}
+}
