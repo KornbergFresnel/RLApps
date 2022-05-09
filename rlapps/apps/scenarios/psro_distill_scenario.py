@@ -4,8 +4,12 @@ from ray.rllib import MultiAgentEnv, Policy
 from ray.rllib.agents import Trainer
 from ray.rllib.utils.typing import ResultDict
 
+from rlapps.algos.psro_distill.manager.manager import Distiller
+
 from rlapps.apps.scenarios.stopping_conditions import StoppingCondition
+from rlapps.apps.scenarios.scenario import Scenario
 from rlapps.apps.scenarios.psro_scenario import PSROScenario
+from rlapps.utils.strategy_spec import StrategySpec
 
 
 def psro_default_log_filter(result: ResultDict) -> bool:
@@ -26,9 +30,13 @@ class DistilledPSROScenario(PSROScenario):
         trainer_class_br: Type[Trainer],
         policy_classes_br: Dict[str, Type[Policy]],
         get_trainer_config_br: Callable[[MultiAgentEnv], Dict[str, Any]],
+        # ==================================
         trainer_class_distill: Type[Trainer],
         policy_classes_distill: Dict[str, Type[Policy]],
         get_trainer_config_distill: Callable[[MultiAgentEnv], Dict[str, Any]],
+        # ==================================
+        get_distiller: Callable[[Scenario], Distiller],
+        # parse offline storage and return
         num_eval_workers: int,
         games_per_payoff_eval: int,
         p2sro: bool,
@@ -36,6 +44,7 @@ class DistilledPSROScenario(PSROScenario):
         p2sro_sync_with_payoff_table_every_n_episodes: Union[int, None],
         single_agent_symmetric_game: bool,
         psro_get_stopping_condition: Callable[[], StoppingCondition],
+        distill_get_stopping_condition: Callable[[], StoppingCondition],
         calc_exploitability_for_openspiel_env: bool,
         ray_should_log_result_filter: Callable[
             [ResultDict], bool
@@ -68,3 +77,7 @@ class DistilledPSROScenario(PSROScenario):
         self.trainer_class_distill = trainer_class_distill
         self.policy_classes_distill = policy_classes_distill
         self.get_trainer_config_distill = get_trainer_config_distill
+        self.get_distiller = get_distiller
+        self.distill_get_stopping_condition = distill_get_stopping_condition
+        self.calculate_openspiel_metanash_at_end = True
+        self.player_num = 2

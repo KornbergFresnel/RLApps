@@ -108,8 +108,10 @@ class PSRODistillManager(P2SROManager):
 
     def _on_finished_eval_result(self, eval_result: EvalResult):
         super()._on_finished_eval_result(eval_result)
+        # updtate offline dataset path recording
         with self._modification_lock:
             # path like: /${user_temp}/${scenario_name}/${player_0_strategy_id}_vs_${player_1_strategy_id}/${timestamp}
+            assert len(eval_result.buffer_file_path) > 0, eval_result.buffer_file_path
             dirname = os.path.dirname(eval_result.buffer_file_path)
             # update manager meta data
             key = "&".join(
