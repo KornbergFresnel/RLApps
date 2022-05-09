@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 import time
-from typing import Dict, Type, List
+from typing import Dict, Type, List, Callable
 
 import ray
 from ray.rllib.agents import Trainer
@@ -14,7 +14,6 @@ from ray.rllib.policy import Policy
 from ray.rllib.utils import merge_dicts, try_import_torch
 
 from rlapps.algos.p2sro.p2sro_manager import RemoteP2SROManagerClient
-from rlapps.algos.p2sro.p2sro_manager.p2sro_manager import P2SROManager
 from rlapps.algos.p2sro.p2sro_manager.utils import (
     get_latest_metanash_strategies,
     PolicySpecDistribution,
@@ -147,6 +146,7 @@ def sync_active_policy_br_and_metanash_with_p2sro_manager(
     active_policy_num: int,
     timesteps_training_br: int,
     episodes_training_br: int,
+    metanash_update_procedure: Callable = None,
 ):
     p2sro_manager.submit_new_active_policy_metadata(
         player=player,
@@ -161,7 +161,9 @@ def sync_active_policy_br_and_metanash_with_p2sro_manager(
         ),
     )
 
-    update_all_workers_to_latest_metanash(
+    updater = metanash_update_procedure or update_all_workers_to_latest_metanash
+
+    updater(
         p2sro_manager=p2sro_manager,
         br_player=player,
         metanash_player=metanash_player,
@@ -181,6 +183,8 @@ def train_psro_best_response(
     print_train_results=True,
     previous_br_checkpoint_path=None,
     remote_manager_client: Type = RemoteP2SROManagerClient,
+    metanash_update_procedure: Callable = None,
+    rllib_callbacks: Type = None,
 ) -> str:
 
     scenario: PSROScenario = scenario_catalog.get(scenario_name=scenario_name)
@@ -341,7 +345,7 @@ def train_psro_best_response(
     tmp_env = env_class(env_config=env_config)
 
     trainer_config = {
-        "callbacks": P2SROPreAndPostEpisodeCallbacks,
+        "callbacks": rllib_callbacks or P2SROPreAndPostEpisodeCallbacks,
         "env": env_class,
         "env_config": env_config,
         "gamma": 1.0,
@@ -423,6 +427,7 @@ def train_psro_best_response(
         active_policy_num=active_policy_num,
         timesteps_training_br=0,
         episodes_training_br=0,
+        metanash_update_procedure=metanash_update_procedure,
     )
 
     # Perform main RL training loop. Stop training according to our StoppingCondition.
@@ -476,6 +481,7 @@ def train_psro_best_response(
                 active_policy_num=active_policy_num,
                 timesteps_training_br=total_timesteps_training_br,
                 episodes_training_br=total_episodes_training_br,
+                metanash_update_procedure=metanash_update_procedure,
             )
 
         if stopping_condition.should_stop_this_iter(

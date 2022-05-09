@@ -6,22 +6,9 @@ from rlapps.algos.p2sro.payoff_table import PayoffTable
 from rlapps.utils.strategy_spec import StrategySpec
 
 
-class PolicySpecDistribution(object):
-    def __init__(
-        self,
-        payoff_table: PayoffTable,
-        player: int,
-        policy_selection_probs_indexed_by_policy_num: List[float],
-    ):
-        self._probs_to_policy_specs: Dict[float, StrategySpec] = {
-            selection_prob: payoff_table.get_spec_for_player_and_pure_strat_index(
-                player=player, pure_strat_index=policy_num
-            )
-            for policy_num, selection_prob in enumerate(
-                policy_selection_probs_indexed_by_policy_num
-            )
-        }
-        self.player = player
+class SpecDistributionInterface(object):
+    def __init__(self, probs_to_policy_specs: Dict[float, StrategySpec]):
+        self._probs_to_policy_specs = probs_to_policy_specs
 
     def sample_policy_spec(self) -> StrategySpec:
         return np.random.choice(
@@ -35,6 +22,26 @@ class PolicySpecDistribution(object):
 
     def probabilities_for_each_strategy(self) -> np.ndarray:
         return np.asarray(list(self._probs_to_policy_specs.keys()), dtype=np.float64)
+
+
+class PolicySpecDistribution(SpecDistributionInterface):
+    def __init__(
+        self,
+        payoff_table: PayoffTable,
+        player: int,
+        policy_selection_probs_indexed_by_policy_num: List[float],
+    ):
+        _probs_to_policy_specs: Dict[float, StrategySpec] = {
+            selection_prob: payoff_table.get_spec_for_player_and_pure_strat_index(
+                player=player, pure_strat_index=policy_num
+            )
+            for policy_num, selection_prob in enumerate(
+                policy_selection_probs_indexed_by_policy_num
+            )
+        }
+        self.player = player
+
+        super().__init__(_probs_to_policy_specs)
 
 
 def get_latest_metanash_strategies(

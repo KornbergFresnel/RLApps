@@ -26,6 +26,7 @@ from rlapps.algos.p2sro.p2sro_manager.remote import (
 from rlapps.algos.p2sro.p2sro_manager.utils import (
     get_latest_metanash_strategies,
     PolicySpecDistribution,
+    SpecDistributionInterface,
 )
 
 
@@ -150,6 +151,19 @@ def update_all_workers_to_latest_metanash(
     mix_metanash_with_uniform_dist_coeff: float,
     one_agent_plays_all_sides: bool = False,
 ):
+    """Compute meta strategies, and send them to trigger policy distillation.
+
+    Args:
+        trainer (Trainer): _description_
+        br_player (int): _description_
+        metanash_player (int): _description_
+        p2sro_manager (RemotePSRODistillManagerClient): _description_
+        active_policy_num (int): _description_
+        mix_metanash_with_uniform_dist_coeff (float): _description_
+        one_agent_plays_all_sides (bool, optional): _description_. Defaults to False.
+    """
+
+    # compute latest meta nash
     (
         latest_payoff_table,
         active_policy_nums,
@@ -199,7 +213,10 @@ def update_all_workers_to_latest_metanash(
     )
 
     def _set_opponent_policy_for_worker(worker: RolloutWorker):
-        worker.opponent_policy = StrategySpec.from_json(distilled_strategy_spec_json)
+        strategy_spec = StrategySpec.from_json(distilled_strategy_spec_json)
+        worker.opponent_policy_distribution = SpecDistributionInterface(
+            {1.0: strategy_spec}
+        )
 
     # update all workers with newest meta policy
     trainer.workers.foreach_worker(_set_opponent_policy_for_worker)
