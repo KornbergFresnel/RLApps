@@ -113,9 +113,11 @@ class RemoteEvalDispatcherClient(EvalDispatcher):
         policy_specs_for_each_player_tuple,
         payoffs_for_each_player: List[float],
         games_played,
-        buffer_file_path = ""
+        buffer_file_path="",
     ):
-        request = EvalJobResult(games_played=games_played, buffer_file_path=buffer_file_path)
+        request = EvalJobResult(
+            games_played=games_played, buffer_file_path=buffer_file_path
+        )
         request.json_policy_specs_for_each_player.extend(
             spec.to_json() for spec in policy_specs_for_each_player_tuple
         )
