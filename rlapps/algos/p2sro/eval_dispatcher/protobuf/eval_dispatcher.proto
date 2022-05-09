@@ -11,6 +11,7 @@ message EvalJobResult {
     repeated string json_policy_specs_for_each_player = 1;
     repeated float payoffs_for_each_player = 2;
     int64 games_played = 3;
+    string buffer_file_path = 4;
 }
 
 message EvalConfirmation {
