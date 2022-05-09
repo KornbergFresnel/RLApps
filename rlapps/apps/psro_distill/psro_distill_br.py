@@ -58,7 +58,7 @@ if __name__ == "__main__":
             psro_manager_port=psro_port,
             psro_manager_host=psro_host,
             print_train_results=True,
-            previous_br_checkpoint_path=previous_br_checkpoint_path,
+            previous_br_checkpoint_path=previous_br_checkpoint_path,  # when pre-train is enabled, please make it be true
             remote_manager_client=RemotePSRODistillManagerClient,
             metanash_update_procedure=update_all_workers_to_latest_metanash,
         )

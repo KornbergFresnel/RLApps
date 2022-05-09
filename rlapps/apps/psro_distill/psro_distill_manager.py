@@ -8,6 +8,7 @@ from rlapps.algos.psro_distill.manager import (
     PSRODistillManagerWithServer,
     PSRODistillManager,
 )
+from rlapps.algos.psro_distill.manager.manager import Distiller
 
 from rlapps.utils.common import datetime_str, ensure_dir
 from rlapps.utils.port_listings import establish_new_server_port_for_service
@@ -65,6 +66,8 @@ def launch_manager(
                 p2sro_manger=_manager, log_dir=_manager.log_dir, scenario=scenario
             )
 
+    distiller: Distiller = scenario.get_distiller(scenario)
+
     manager = PSRODistillManagerWithServer(
         port=psro_port,
         eval_dispatcher_port=eval_port,
@@ -72,6 +75,7 @@ def launch_manager(
         is_two_player_symmetric_zero_sum=scenario.single_agent_symmetric_game,
         do_external_payoff_evals_for_new_fixed_policies=True,
         games_per_external_payoff_eval=scenario.games_per_payoff_eval,
+        distiller=distiller,
         payoff_table_exponential_average_coeff=scenario.p2sro_payoff_table_exponential_avg_coeff,
         log_dir=log_dir,
         manager_metadata={"ray_head_address": ray_head_address},

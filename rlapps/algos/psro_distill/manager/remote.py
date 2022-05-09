@@ -9,7 +9,7 @@ from ray.rllib.agents import Trainer
 from ray.rllib.evaluation import RolloutWorker
 
 from rlapps.utils.strategy_spec import StrategySpec
-from rlapps.algos.psro_distill.manager.manager import PSRODistillManager
+from rlapps.algos.psro_distill.manager.manager import Distiller, PSRODistillManager
 from rlapps.algos.psro_distill.manager.protobuf.manager_pb2_grpc import (
     PSRODistillManagerStub,
     add_PSRODistillManagerServicer_to_server,
@@ -45,7 +45,6 @@ class _PSRODistillMangerServerServicerImpl(PSRODistillManagerServicer):
     ):
         prob_list = request.policy_prob_list
         strategy_spec_list = json.load(request.policy_spec_json_list)
-        # parse json
         result = self._manager.distill_meta_nash(prob_list, strategy_spec_list)
         return psro_proto.PolicySpecJson(policy_spec_json=result.to_json())
 
@@ -57,6 +56,7 @@ class PSRODistillManagerWithServer(PSRODistillManager):
         is_two_player_symmetric_zero_sum: bool,
         do_external_payoff_evals_for_new_fixed_policies: bool,
         games_per_external_payoff_eval: int,
+        distiller: Distiller,
         eval_dispatcher_port: int = 4536,
         payoff_table_exponential_average_coeff: float = None,
         get_manager_logger=None,
@@ -65,15 +65,16 @@ class PSRODistillManagerWithServer(PSRODistillManager):
         port: int = 4535,
     ):
         super().__init__(
-            n_players,
-            is_two_player_symmetric_zero_sum,
-            do_external_payoff_evals_for_new_fixed_policies,
-            games_per_external_payoff_eval,
-            eval_dispatcher_port,
-            payoff_table_exponential_average_coeff,
-            get_manager_logger,
-            log_dir,
-            manager_metadata,
+            n_players=n_players,
+            is_two_players_symmetric_zero_sum=is_two_player_symmetric_zero_sum,
+            do_external_payoff_evals_for_new_fixed_policies=do_external_payoff_evals_for_new_fixed_policies,
+            game_per_external_payoff_eval=games_per_external_payoff_eval,
+            eval_distpatcher_port=eval_dispatcher_port,
+            distiler=distiller,
+            payoff_table_exponential_average_coeff=payoff_table_exponential_average_coeff,
+            get_manager_logger=get_manager_logger,
+            log_dir=log_dir,
+            manager_metadata=manager_metadata,
         )
 
         self._grpc_server = grpc.server(
@@ -130,7 +131,9 @@ class RemotePSRODistillManagerClient(RemoteP2SROManagerClient):
             )
         self._n_players = n_players
 
-    def distill_meta_nash(self, prob_to_strategy_specs: Dict[float, StrategySpec]):
+    def distill_meta_nash(
+        self, prob_to_strategy_specs: Dict[float, StrategySpec]
+    ) -> StrategySpec:
         probs = list(prob_to_strategy_specs.keys())
         specs = list(prob_to_strategy_specs.values())
 
@@ -138,8 +141,9 @@ class RemotePSRODistillManagerClient(RemoteP2SROManagerClient):
             policy_prob_list=probs, policy_spec_json_list=json.dump(specs)
         )
 
-        results = self._stub.GetDistilledMetaNash(request)
-        return results
+        json_str = self._stub.GetDistilledMetaNash(request)
+        distilled_strategy_spec = StrategySpec.from_json(json_str)
+        return distilled_strategy_spec
 
 
 def update_all_workers_to_latest_metanash(
@@ -208,14 +212,11 @@ def update_all_workers_to_latest_metanash(
         opponent_player
     ].probs_to_specs
 
-    distilled_strategy_spec_json = p2sro_manager.distill_meta_nash(
-        prob_to_strategy_specs
-    )
+    distilled_strategy_spec = p2sro_manager.distill_meta_nash(prob_to_strategy_specs)
 
     def _set_opponent_policy_for_worker(worker: RolloutWorker):
-        strategy_spec = StrategySpec.from_json(distilled_strategy_spec_json)
         worker.opponent_policy_distribution = SpecDistributionInterface(
-            {1.0: strategy_spec}
+            {1.0: distilled_strategy_spec}
         )
 
     # update all workers with newest meta policy

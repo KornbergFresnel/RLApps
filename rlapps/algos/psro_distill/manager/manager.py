@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from threading import RLock
 from termcolor import colored
-from typing import List, Tuple, Union, Dict
+from typing import List, Tuple, Union, Dict, Callable
 
 from rlapps.utils.common import datetime_str, ensure_dir, check_if_jsonable
 from rlapps.utils.strategy_spec import StrategySpec
@@ -17,13 +17,53 @@ from rlapps.algos.p2sro.p2sro_manager.utils import (
 )
 
 
+class DistillerResult:
+    def __init__(
+        self,
+        distilled_strategy_spec: StrategySpec,
+        episodes_spent_in_solve: int,
+        timesteps_spent_in_solve: int,
+        extra_data_to_log: dict,
+    ):
+        self.distilled_strategy_spec = distilled_strategy_spec
+        self.episodes_spent_in_solve = episodes_spent_in_solve
+        self.timesteps_spent_in_solve = timesteps_spent_in_solve
+        self.extra_data_to_log = extra_data_to_log
+
+
+class Distiller(ABC):
+    @abstractmethod
+    def __call__(
+        self,
+        log_dir: str,
+        br_prob_list: List[float],
+        br_spec_list: List[StrategySpec],
+        manager_metadata: dict = None,
+    ) -> DistillerResult:
+        """Execution meta strategy distillation.
+
+        Args:
+            log_dir (str): _description_
+            br_prob_list (List[float]): _description_
+            br_spec_list (List[StrategySpec]): _description_
+            manager_metadata (dict, optional): _description_. Defaults to None.
+
+        Raises:
+            NotImplementedError: _description_
+
+        Returns:
+            DistillerResult: _description_
+        """
+
+
 class PSRODistillManager(P2SROManager):
     def __init__(
         self,
-        n_players,
+        n_players: int,
         is_two_player_symmetric_zero_sum: bool,
         do_external_payoff_evals_for_new_fixed_policies: bool,
         games_per_external_payoff_eval: int,
+        distiller: Distiller,
         eval_dispatcher_port: int = 4536,
         payoff_table_exponential_average_coeff: float = None,
         get_manager_logger=None,
@@ -46,29 +86,29 @@ class PSRODistillManager(P2SROManager):
         self._timesteps_total = 0
         self._restricted_game_episodes_this_iter = 0
         self._restricted_game_timesteps_this_iter = 0
+        self._distiller = distiller
 
     def distill_meta_nash(
         self, probs_list: List[float], strategy_spec_list: List[StrategySpec]
-    ):
-        # distillation_results = self._distiller(
-        #     log_dir=self.log_dir,
-        #     br_spec_lists_for_each_player=br_spec_lists_for_each_player,
-        #     manager_meta_data=self.get_manager_metadata(),
-        # )
+    ) -> StrategySpec:
+        """Distill a meta strategy to a single strategy spec.
 
-        # self._restricted_game_episodes_this_iter += (
-        #     distillation_results.episodes_spent_in_solve
-        # )
-        # self._restricted_game_timesteps_this_iter += (
-        #     distillation_results.timesteps_spent_in_solve
-        # )
+        Args:
+            probs_list (List[float]): A list of probs.
+            strategy_spec_list (List[StrategySpec]): A list of strategy specs.
 
-        # self._episodes_total += (
-        #     self._br_episodes_this_iter + self._restricted_game_episodes_this_iter
-        # )
-        # self._timesteps_total += (
-        #     self._br_timesteps_this_iter + self._restricted_game_timesteps_this_iter
-        # )
+        Raises:
+            NotImplementedError: _description_
+        """
 
-        # return distillation_results
-        raise NotImplementedError
+        print("Distilling meta strategy ...")
+
+        distillation_results = self._distiller(
+            log_dir=self.log_dir,
+            br_prob_list=probs_list,
+            br_spec_list=strategy_spec_list,
+            manager_metadata=self.get_manager_metadata(),
+        )
+
+        # TODO(ming): print results and return strategy spec
+        return distillation_results.distilled_strategy_spec
