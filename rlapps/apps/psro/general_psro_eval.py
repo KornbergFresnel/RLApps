@@ -1,10 +1,19 @@
+from collections import defaultdict
+from typing import Any, Tuple
+
 import argparse
 import logging
 import time
+import os
 
 import numpy as np
 import ray
+
 from ray.rllib.agents.trainer import with_common_config
+from ray.rllib.models.preprocessors import get_preprocessor
+from ray.rllib.policy.sample_batch import SampleBatch
+from ray.rllib.evaluation.sample_batch_builder import MultiAgentSampleBatchBuilder
+from ray.rllib.offline.json_writer import JsonWriter
 
 from rlapps.algos.p2sro.eval_dispatcher.remote import RemoteEvalDispatcherClient
 from rlapps.apps import GRL_SEED
@@ -15,8 +24,17 @@ from rlapps.rllib_tools.policy_checkpoints import load_pure_strat
 from rlapps.utils.port_listings import get_client_port_for_service
 
 
-def run_episode(env, policies_for_each_player) -> np.ndarray:
+def run_episode(
+    env, policies_for_each_player, store_as_offline: bool = False
+) -> Tuple[np.ndarray, Any]:
     num_players = len(policies_for_each_player)
+
+    if store_as_offline:
+        batch_builder = MultiAgentSampleBatchBuilder(policy_map=None)
+        prep = get_preprocessor(env.observation_space)(env.observation_space)
+    else:
+        batch_builder = None
+        prep = None
 
     obs = env.reset()
     dones = {}
@@ -24,13 +42,19 @@ def run_episode(env, policies_for_each_player) -> np.ndarray:
     policy_states = [policy.get_initial_state() for policy in policies_for_each_player]
 
     payoffs_per_player_this_episode = np.zeros(shape=num_players, dtype=np.float64)
+    prev_rewards = {}
+    prev_actions = {}
+
+    action_space = env.action_space
+
     while True:
         if "__all__" in dones:
             if dones["__all__"]:
                 break
-        game_length += 1
 
         action_dict = {}
+        action_info_dict = {}
+
         for player in range(num_players):
             if player in obs:
                 action_index, new_policy_state, action_info = policies_for_each_player[
@@ -38,8 +62,9 @@ def run_episode(env, policies_for_each_player) -> np.ndarray:
                 ].compute_single_action(obs=obs[player], state=policy_states[player])
                 policy_states[player] = new_policy_state
                 action_dict[player] = action_index
+                action_info_dict[player] = action_info
 
-        obs, rewards, dones, infos = env.step(action_dict=action_dict)
+        new_obs, rewards, dones, infos = env.step(action_dict=action_dict)
 
         for player in range(num_players):
             payoff_so_far = payoffs_per_player_this_episode[player]
@@ -47,12 +72,52 @@ def run_episode(env, policies_for_each_player) -> np.ndarray:
                 player, 0.0
             )
 
-    return payoffs_per_player_this_episode
+            if store_as_offline and player in obs:
+                batch_builder.add_values(
+                    agent_id=player,
+                    policy_id=None,
+                    t=game_length,
+                    **{
+                        SampleBatch.CUR_OBS: prep.transform(obs[player]),
+                        SampleBatch.ACTIONS: action_index,
+                        SampleBatch.ACTION_PROB: action_info_dict[player][
+                            SampleBatch.ACTION_PROB
+                        ],
+                        SampleBatch.ACTION_LOGP: action_info_dict[player][
+                            SampleBatch.ACTION_LOGP
+                        ],
+                        SampleBatch.REWARDS: rewards[player],
+                        SampleBatch.PREV_ACTIONS: prev_actions.get(
+                            player, action_space.sample()
+                        ),
+                        SampleBatch.PREV_REWARDS: prev_rewards.get(player, 0.0),
+                        SampleBatch.DONES: dones[player],
+                        SampleBatch.INFOS: infos.get(player, {}),
+                        # SampleBatch.NEXT_OBS: prep.transform(new_obs[player]),
+                    },
+                )
+
+        for player in obs:
+            prev_actions[player] = action_dict[player]
+            prev_rewards = rewards[player]
+
+        obs = new_obs
+        game_length += 1
+
+    if store_as_offline:
+        samples = batch_builder.build_and_reset()
+    else:
+        samples = None
+
+    return payoffs_per_player_this_episode, samples
 
 
 @ray.remote(num_cpus=0, num_gpus=0)
 def run_poker_evaluation_loop(
-    scenario_name: str, eval_dispatcher_port: int, eval_dispatcher_host: str
+    scenario_name: str,
+    eval_dispatcher_port: int,
+    eval_dispatcher_host: str,
+    store_as_offline: bool = False,
 ):
     scenario: PSROScenario = scenario_catalog.get(scenario_name=scenario_name)
     if not isinstance(scenario, PSROScenario):
@@ -76,6 +141,8 @@ def run_poker_evaluation_loop(
         )
         for _ in range(num_players)
     ]
+
+    buffer_list = []
 
     while True:
         (
@@ -112,9 +179,15 @@ def run_poker_evaluation_loop(
                 #           f"{game}/{required_games_to_play} games played, {now - time_since_last_output} seconds")
                 #     time_since_last_output = now
 
-                payoffs_per_player_this_episode = run_episode(
-                    env=env, policies_for_each_player=policies
+                payoffs_per_player_this_episode, samples = run_episode(
+                    env=env,
+                    policies_for_each_player=policies,
+                    store_as_offline=store_as_offline,
                 )
+
+                if samples is not None:
+                    buffer_list.append(samples)
+
                 total_payoffs_per_player += payoffs_per_player_this_episode
 
                 # if max_reward is None or max(payoffs_per_player_this_episode) > max_reward:
@@ -131,10 +204,28 @@ def run_poker_evaluation_loop(
                 f"{payoffs_per_player}"
             )
 
+            # save buffers
+            if len(buffer_list) > 0:
+                dir_name = os.path.join(
+                    ray._private.utils.get_user_temp_dir(),
+                    scenario_name,
+                    f"{policy_specs_for_each_player[0].id}_vs_{policy_specs_for_each_player[1].id}",
+                )
+
+                if not os.path.exists(dir_name):
+                    os.makedirs(dir_name)
+                buffer_file_path = os.path.join(dir_name, str(time.time()))
+                writer = JsonWriter(buffer_file_path)
+                for e in buffer_list:
+                    writer.write(e)
+            else:
+                buffer_file_path = ""
+
             eval_dispatcher.submit_eval_job_result(
                 policy_specs_for_each_player_tuple=policy_specs_for_each_player,
                 payoffs_for_each_player=payoffs_per_player,
                 games_played=required_games_to_play,
+                buffer_file_path=buffer_file_path,
             )
 
 
