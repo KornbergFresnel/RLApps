@@ -52,11 +52,16 @@ class _EvalQueue(object):
 
 class EvalResult(object):
     def __init__(
-        self, policy_specs_for_each_player, payoff_for_each_player, games_played
+        self,
+        policy_specs_for_each_player,
+        payoff_for_each_player,
+        games_played,
+        buffer_file_path,
     ):
         self.policy_specs_for_each_player = policy_specs_for_each_player
         self.payoff_for_each_player = payoff_for_each_player
         self.games_played = games_played
+        self.buffer_file_path = buffer_file_path
 
 
 class EvalDispatcher(object):
@@ -85,11 +90,13 @@ class EvalDispatcher(object):
         policy_specs_for_each_player_tuple,
         payoffs_for_each_player: List[float],
         games_played,
+        buffer_file_path: str = "",
     ):
         eval_result = EvalResult(
             policy_specs_for_each_player=policy_specs_for_each_player_tuple,
             payoff_for_each_player=payoffs_for_each_player,
             games_played=games_played,
+            buffer_file_path=buffer_file_path,
         )
         for callback in self._on_eval_result_callbacks:
             callback(eval_result)

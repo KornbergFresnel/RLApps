@@ -1,20 +1,11 @@
 import json
 import os
 from abc import ABC, abstractmethod
-from copy import deepcopy
-from threading import RLock
-from termcolor import colored
-from typing import List, Tuple, Union, Dict, Callable
+from typing import List
 
-from rlapps.utils.common import datetime_str, ensure_dir, check_if_jsonable
 from rlapps.utils.strategy_spec import StrategySpec
-
 from rlapps.algos.p2sro.p2sro_manager import P2SROManager
-from rlapps.algos.p2sro.eval_dispatcher import EvalDispatcherWithServer, EvalResult
-from rlapps.algos.p2sro.p2sro_manager.utils import (
-    get_latest_metanash_strategies,
-    PolicySpecDistribution,
-)
+from rlapps.algos.p2sro.eval_dispatcher import EvalResult
 
 
 class DistillerResult:
@@ -88,6 +79,8 @@ class PSRODistillManager(P2SROManager):
         self._restricted_game_timesteps_this_iter = 0
         self._distiller = distiller
 
+        self.manager_metadata["offline_dataset"] = {}
+
     def distill_meta_nash(
         self, probs_list: List[float], strategy_spec_list: List[StrategySpec]
     ) -> StrategySpec:
@@ -112,3 +105,15 @@ class PSRODistillManager(P2SROManager):
 
         # TODO(ming): print results and return strategy spec
         return distillation_results.distilled_strategy_spec
+
+    def _on_finished_eval_result(self, eval_result: EvalResult):
+        super()._on_finished_eval_result(eval_result)
+        with self._modification_lock:
+            # path like: /${user_temp}/${scenario_name}/${player_0_strategy_id}_vs_${player_1_strategy_id}/${timestamp}
+            dirname = os.path.dirname(eval_result.buffer_file_path)
+            # update manager meta data
+            key = "&".join(
+                [spec.id for spec in eval_result.policy_specs_for_each_player]
+            )
+            if key not in self.manager_metadata["offline_dataset"]:
+                self.manager_metadata["offline_dataset"][key] = dirname
