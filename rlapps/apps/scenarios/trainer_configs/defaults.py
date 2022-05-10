@@ -2,6 +2,7 @@ import os
 
 from ray.rllib.models import MODEL_DEFAULTS
 from ray.rllib.utils import merge_dicts
+from ray.rllib.agents import marwil
 
 from rlapps.rllib_tools.stochastic_sampling_ignore_kwargs import (
     StochasticSamplingIgnoreKwargs,
@@ -112,17 +113,7 @@ GRL_DEFAULT_OPENSPIEL_POKER_DQN_PARAMS = {
     ),
 }
 
-GRL_DEFAULT_POKER_MARWIL_PARAMS = {
-    "framework": "torch",
-    "input": "sampler",
-    "model": merge_dicts(
-        MODEL_DEFAULTS,
-        {
-            "fcnet_activation": "relu",
-            "fcnet_hiddens": [128],
-        },
-    ),
-}
+GRL_DEFAULT_POKER_MARWIL_PARAMS = marwil.DEFAULT_CONFIG.copy()
 
 GRL_DEFAULT_POKER_PPO_PARAMS = {
     "framework": "torch",

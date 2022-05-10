@@ -3,35 +3,33 @@ from typing import List
 
 import time
 import os
+import functools
+import operator
+import itertools
+
 import ray
+import numpy as np
 import deepdish
 
-from ray.rllib.utils import merge_dicts, try_import_torch
+from ray.rllib.utils import merge_dicts
 from ray.rllib.agents import Trainer
-from ray.rllib.agents.marwil import (
-    MARWILTorchPolicy,
-    MARWILTrainer,
-    DEFAULT_CONFIG,
-    BC_DEFAULT_CONFIG,
-)
 
 from rlapps.utils.strategy_spec import StrategySpec
 from rlapps.utils.common import (
-    pretty_dict_str,
     datetime_str,
     ensure_dir,
-    copy_attributes,
 )
 from rlapps.rllib_tools.space_saving_logger import get_trainer_logger_creator
 from rlapps.algos.psro_distill.manager.manager import DistillerResult, Distiller
 from rlapps.apps.scenarios.psro_distill_scenario import DistilledPSROScenario
+from rlapps.envs.ma_to_single_env import SingleAgentEnv
 
 
 def checkpoint_dir(trainer: Trainer):
     return os.path.join(trainer.logdir, "br_checkpoints")
 
 
-def save_nfsp_avg_policy_checkpoint(
+def save_policy_checkpoint(
     trainer: Trainer,
     policy_id_to_save: str,
     save_dir: str,
@@ -70,8 +68,9 @@ class BCDistiller(Distiller):
     def __call__(
         self,
         log_dir: str,
-        br_prob_list: List[float],
-        br_spec_list: List[StrategySpec],
+        br_player: int,
+        br_prob_list_each_player: List[List[float]],
+        br_spec_list_each_player: List[List[StrategySpec]],
         manager_metadata: dict = None,
     ) -> DistillerResult:
 
@@ -79,42 +78,88 @@ class BCDistiller(Distiller):
         env_class = self.scenario.env_class
         env_config = self.scenario.env_config
 
-        def assert_not_called(agent_id):
-            assert False, "This function should never be called."
-
-        def _create_base_env():
-            return env_class(env_config=env_config)
+        assert len(br_prob_list_each_player) == self.scenario.player_num, len(
+            br_prob_list_each_player
+        )
+        assert len(br_spec_list_each_player) == self.scenario.player_num, len(
+            br_spec_list_each_player
+        )
 
         tmp_env = env_class(env_config=env_config)
         stopping_condition = self.scenario.distill_get_stopping_condition
         print_train_results = True
 
-        training_config = merge_dicts(
-            {
-                "log_level": "DEBUG",
-                "framework": "torch",
-                "disable_env_checking": True,
-                "env": self.scenario.env_class,
-                "env_config": self.scenario.env_config,
-                "num_gpus": 0.0,
-                "num_gpus_per_worker": 0.0,
-                "num_workers": 0,
-                "num_envs_per_worker": 1,
-                "multiagent": {
-                    "policies_to_train": ["distilled_policy"],
-                    "policies": {
-                        "distilled_policy": (
-                            self.scenario.policy_classes["distilled_policy"],
-                            tmp_env.observation_space,
-                            tmp_env.action_space,
-                        ),
-                    },
-                    "policy_mapping_fn": assert_not_called,
-                },
-            },
+        joint_policy_mapping = manager_metadata["offline_dataset"]
+        offline_weighted_inputs = {}
+        # build keys
+        for prod in itertools.product(br_spec_list_each_player):
+            key = "&".join([e.id for e in prod])
+            joint_prob = functools.reduce(
+                operator.mul,
+                [
+                    br_prob_list_each_player[player_id][
+                        br_spec_list_each_player[player_id].index(spec)
+                    ]
+                    for player_id, spec in enumerate(prod)
+                ],
+            )
+            if joint_prob < 1e-3:
+                continue
+            offline_weighted_inputs[joint_policy_mapping[key]] = joint_prob
+
+        assert np.isclose(sum(offline_weighted_inputs.values()), 1.0), (
+            offline_weighted_inputs,
+            sum(offline_weighted_inputs.values()),
         )
 
-        trainer = MARWILTrainer(
+        other = 1 - br_player
+
+        def select_policy(agent_id):
+            if agent_id == br_player:
+                raise RuntimeError(
+                    "cannot call policy selection for best response player: {}".format(
+                        agent_id
+                    )
+                )
+            else:
+                return "eval"
+
+        runtime_single_agent_env_config = {
+            "env_class": self.scenario.env_class,
+            "env_config": self.scenario.env_config,
+            "br_player": br_player,
+            "multiagent": {
+                "policies": {
+                    "eval": (
+                        self.scenario.policy_classes_distill["eval"],
+                        tmp_env.observation_space,
+                        tmp_env.action_space,
+                        {},
+                    )
+                },
+                "policy_mapping_fn": select_policy,
+                "strategy_spec_dict": {
+                    "eval": (
+                        br_prob_list_each_player[other],
+                        br_spec_list_each_player[other],
+                    )
+                },
+            },
+        }
+
+        training_config = {
+            "input": offline_weighted_inputs,
+            "observation_space": tmp_env.observation_space,
+            "action_space": tmp_env.action_space,
+            "env": SingleAgentEnv,
+            "env_config": runtime_single_agent_env_config,
+        }
+
+        training_config = merge_dicts(
+            self.scenario.get_trainer_config_distill(tmp_env), training_config
+        )
+
+        trainer = self.scenario.trainer_class_distill(
             training_config,
             logger_creator=get_trainer_logger_creator(
                 base_dir=log_dir,
@@ -123,10 +168,14 @@ class BCDistiller(Distiller):
             ),
         )
 
+        training_iteration = 0
         while True:
             train_results = trainer.train()
-            if print_train_results:
-                raise NotImplementedError
+            eval_results = train_results.get("evaluation")
+            if eval_results:
+                print(
+                    "iter={} R={}".format(training_iteration, ["episode_reward_mean"])
+                )
 
             if stopping_condition.should_stop_this_iter(
                 latest_trainer_result=train_results
@@ -135,65 +184,34 @@ class BCDistiller(Distiller):
                 final_train_result = deepcopy(train_results)
                 break
 
-        if self.scenario.calculate_openspiel_metanash_at_end:
-            base_env = _create_base_env()
-            open_spiel_env_config = base_env.open_spiel_env_config
-            openspiel_game_version = base_env.game_version
-            local_avg_policy_0 = br_trainer.workers.local_worker().policy_map[
-                "average_policy_0"
-            ]
-            local_avg_policy_1 = br_trainer.workers.local_worker().policy_map[
-                "average_policy_1"
-            ]
-            exploitability = nxdo_nfsp_measure_exploitability_nonlstm(
-                rllib_policies=[local_avg_policy_0, local_avg_policy_1],
-                poker_game_version=openspiel_game_version,
-                restricted_game_convertors=br_trainer.get_local_converters(),
-                open_spiel_env_config=open_spiel_env_config,
-                use_delegate_policy_exploration=self.scenario.allow_stochastic_best_responses,
-            )
-            final_train_result["avg_policy_exploitability"] = exploitability
+            training_iteration += 1
 
-        if "avg_policy_exploitability" in final_train_result:
-            print(
-                f"\n\nexploitability: {final_train_result['avg_policy_exploitability']}\n\n"
-            )
+        strategy_id = f"distilled_{br_player}_{datetime_str()}"
+        checkpoint_path = save_policy_checkpoint(
+            trainer=trainer,
+            policy_id_to_save=f"distilled_{br_player}",
+            save_dir=checkpoint_dir(trainer=trainer),
+            timesteps_training=final_train_result["timesteps_total"],
+            episodes_training=final_train_result["episodes_total"],
+            checkpoint_name=f"{strategy_id}.h5",
+        )
 
-        avg_policy_specs = []
-        for player in range(2):
-            strategy_id = f"avg_policy_player_{player}_{datetime_str()}"
+        distilled_strategy_spec = StrategySpec(
+            strategy_id=strategy_id,
+            metadata={"checkpoint_path": checkpoint_path},
+        )
 
-            checkpoint_path = save_nfsp_avg_policy_checkpoint(
-                trainer=br_trainer,
-                policy_id_to_save=f"average_policy_{player}",
-                save_dir=checkpoint_dir(trainer=br_trainer),
-                timesteps_training=final_train_result["timesteps_total"],
-                episodes_training=final_train_result["episodes_total"],
-                checkpoint_name=f"{strategy_id}.h5",
-            )
-
-            avg_policy_spec = StrategySpec(
-                strategy_id=strategy_id,
-                metadata={
-                    "checkpoint_path": checkpoint_path,
-                    "delegate_policy_specs": [
-                        spec.to_json()
-                        for spec in player_to_base_game_action_specs[player]
-                    ],
-                },
-            )
-            avg_policy_specs.append(avg_policy_spec)
-
-        ray.kill(avg_trainer.workers.local_worker().replay_buffer_actor)
-        avg_trainer.cleanup()
-        br_trainer.cleanup()
-        del avg_trainer
-        del br_trainer
-        del avg_br_reward_deque
+        ray.kill(trainer.workers.local_worker().replay_buffer_actor)
+        del trainer
+        # del avg_br_reward_deque
 
         time.sleep(10)
 
         assert final_train_result is not None
-        # return avg_policy_specs, final_train_result
-        # TODO(ming): pack to distilled results
-        return DistillerResult(distilled_strategy_spec=distilled_strategy_spec)
+
+        return DistillerResult(
+            distilled_strategy_spec=distilled_strategy_spec,
+            episodes_spent_in_solve=final_train_result["episodes_total"],
+            timesteps_spent_in_solve=final_train_result["timesteps_total"],
+            extra_data_to_log={},
+        )
