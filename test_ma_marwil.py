@@ -8,9 +8,11 @@ import ray._private.utils
 from ray.rllib.utils.typing import PolicyID, AgentID
 from ray.rllib.agents.trainer import with_common_config
 from ray.rllib.agents.marwil import MARWILTrainer
+from ray.rllib.agents.marwil import DEFAULT_CONFIG as MARIL_CONFIG
 from ray.rllib.offline.json_writer import JsonWriter
 from ray.rllib.utils import merge_dicts
 
+from rlapps.envs.ma_to_single_env import SingleAgentEnv
 from rlapps.envs.poker_multi_agent_env import PokerMultiAgentEnv
 from rlapps.apps.scenarios.catalog import scenario_catalog
 from rlapps.apps.scenarios.psro_scenario import PSROScenario
@@ -24,7 +26,7 @@ def collect(
     buffer_file_path: str,
     episode_num: int = 10,
 ):
-    env = PokerMultiAgentEnv(env_config=None)
+    env = scenario.env_class(env_config=scenario.env_config)
     trainer_config = scenario.get_trainer_config(env)
     num_players = 2
 
@@ -50,11 +52,10 @@ def collect(
 
         print(f"payoffs per player:" f"0 vs 1: " f"{payoffs_per_player}")
 
-        for v in samples[br_player]:
-            buffer_list.append(v)
+        buffer_list.append(samples[br_player])
 
     writer = JsonWriter(buffer_file_path)
-    for e in buffer_list[br_player]:
+    for e in buffer_list:
         writer.write(e)
 
 
@@ -76,44 +77,43 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
     print("Buffer file path is:", dir_name)
     buffer_file_path = dir_name
 
-    def select_policy(agent_id):
-        if agent_id == 0:
-            return "distilled_policy_0"
-        elif agent_id == 1:
-            return "distilled_policy_1"
-        else:
-            raise ValueError(f"Unknown agent id: {agent_id}")
-
     collect(br_player, scenario, buffer_file_path)
     print("collect done..")
 
     prob_list = [0.1, 0.2, 0.7]
 
-    runtime_single_agent_env_config = merge_dicts(
-        scenario.single_agent_env_config,
-        {
-            "multiagent": {
-                "policies": {
-                    "metanash": (
-                        scenario.policy_classes_distill["meta_nash"],
-                        tmp_env.observation_space,
-                        tmp_env.action_space,
-                        {"prob_list": prob_list},
-                    )
-                }
-            }
+    runtime_single_agent_env_config = {
+        "env_class": scenario.env_class,
+        "env_config": scenario.env_config,
+        "br_player": br_player,
+        "multiagent": {
+            "policies": {
+                "eval": (
+                    scenario.policy_classes_distill["eval"],
+                    tmp_env.observation_space,
+                    tmp_env.action_space,
+                    {},
+                )
+            },
+            "policy_mapping_fn": lambda agent_id: "eval",
         },
-    )
+    }
+
+    config = MARIL_CONFIG.copy()
+    config["num_workers"] = 2
+    config["evaluation_num_workers"] = 1
+    config["evaluation_interval"] = 3
+    config["evaluation_duration"] = 5
+    config["evaluation_parallel_to_training"] = True
+    config["evaluation_config"] = {"input": "sampler"}
 
     config.update(
         {
+            "framework": "torch",
             "input": buffer_file_path,
-            "evaluation_interval": None,
-            "input_evaluation": [],
-            "postprocess_inputs": True,
             "observation_space": tmp_env.observation_space,
             "action_space": tmp_env.action_space,
-            "env": scenario.single_agent_env_class,
+            "env": SingleAgentEnv,
             "env_config": runtime_single_agent_env_config,
         }
     )
@@ -125,9 +125,6 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
 
     for i in range(num_iterations):
         results = trainer.train()
-        print("+" * 10 + f"\n\titeration: {i}\n" + "+" * 10)
-        print(results)
-
         eval_results = results.get("evaluation")
         if eval_results:
             print("iter={} R={} ".format(i, eval_results["episode_reward_mean"]))

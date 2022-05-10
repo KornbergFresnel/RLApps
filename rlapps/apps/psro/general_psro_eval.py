@@ -34,6 +34,8 @@ def store_frames_to_builders(
     reward,
     done,
     action,
+    action_prob_dict,
+    action_logp_dict,
     next_obs,
     infos,
 ):
@@ -65,6 +67,14 @@ def store_frames_to_builders(
         if k not in agents:
             continue
         agent_batch_dict[k][SampleBatch.ACTIONS].append(_action)
+    for k, _action_prob in action_prob_dict.items():
+        if k not in agents:
+            continue
+        agent_batch_dict[k][SampleBatch.ACTION_PROB].append(_action_prob)
+    for k, _action_logp in action_logp_dict.items():
+        if k not in agents:
+            continue
+        agent_batch_dict[k][SampleBatch.ACTION_LOGP].append(_action_logp)
     for k, _info in infos.items():
         if k not in agents:
             continue
@@ -102,6 +112,8 @@ def run_episode(
 
         action_dict = {}
         action_info_dict = {}
+        action_prob_dict = {}
+        action_logp_dict = {}
 
         for player in range(num_players):
             if player in obs:
@@ -109,6 +121,8 @@ def run_episode(
                     player
                 ].compute_single_action(obs=obs[player], state=policy_states[player])
                 policy_states[player] = new_policy_state
+                action_prob_dict[player] = action_info["action_prob"]
+                action_logp_dict[player] = action_info["action_logp"]
                 action_dict[player] = action_index
                 action_info_dict[player] = action_info
                 agent_step[player] += 1
@@ -132,6 +146,8 @@ def run_episode(
                 rewards,
                 dones,
                 action_dict,
+                action_prob_dict,
+                action_logp_dict,
                 new_obs,
                 infos,
             )
