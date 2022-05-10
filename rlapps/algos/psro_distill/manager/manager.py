@@ -27,8 +27,9 @@ class Distiller(ABC):
     def __call__(
         self,
         log_dir: str,
-        br_prob_list: List[float],
-        br_spec_list: List[StrategySpec],
+        br_player: int,
+        br_prob_list_each_player: List[List[float]],
+        br_spec_list_each_player: List[List[StrategySpec]],
         manager_metadata: dict = None,
     ) -> DistillerResult:
         """Execution meta strategy distillation.
@@ -82,7 +83,10 @@ class PSRODistillManager(P2SROManager):
         self.manager_metadata["offline_dataset"] = {}
 
     def distill_meta_nash(
-        self, probs_list: List[float], strategy_spec_list: List[StrategySpec]
+        self,
+        br_player: int,
+        probs_list_each_player: List[float],
+        strategy_spec_list_each_player: List[StrategySpec],
     ) -> StrategySpec:
         """Distill a meta strategy to a single strategy spec.
 
@@ -98,8 +102,9 @@ class PSRODistillManager(P2SROManager):
 
         distillation_results = self._distiller(
             log_dir=self.log_dir,
-            br_prob_list=probs_list,
-            br_spec_list=strategy_spec_list,
+            br_player=br_player,
+            br_prob_list_each_plaer=probs_list_each_player,
+            br_spec_list_each_player=strategy_spec_list_each_player,
             manager_metadata=self.get_manager_metadata(),
         )
 

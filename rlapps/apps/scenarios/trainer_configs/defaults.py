@@ -112,6 +112,18 @@ GRL_DEFAULT_OPENSPIEL_POKER_DQN_PARAMS = {
     ),
 }
 
+GRL_DEFAULT_POKER_MARWIL_PARAMS = {
+    "framework": "torch",
+    "input": "sampler",
+    "model": merge_dicts(
+        MODEL_DEFAULTS,
+        {
+            "fcnet_activation": "relu",
+            "fcnet_hiddens": [128],
+        },
+    ),
+}
+
 GRL_DEFAULT_POKER_PPO_PARAMS = {
     "framework": "torch",
     # Should use a critic as a baseline (otherwise don't use value baseline;

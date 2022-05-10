@@ -9,15 +9,10 @@ from ray.rllib.agents import Trainer
 from ray.rllib.evaluation import RolloutWorker
 
 from rlapps.utils.strategy_spec import StrategySpec
-from rlapps.algos.psro_distill.manager.manager import Distiller, PSRODistillManager
-from rlapps.algos.psro_distill.manager.protobuf.manager_pb2_grpc import (
-    PSRODistillManagerStub,
-    add_PSRODistillManagerServicer_to_server,
-)
 from rlapps.algos.p2sro.p2sro_manager.protobuf import p2sro_manager_pb2 as psro_proto
-from rlapps.algos.psro_distill.manager.protobuf import manager_pb2 as psro_distill_proto
-from rlapps.algos.psro_distill.manager.protobuf.manager_pb2_grpc import (
-    PSRODistillManagerServicer,
+from rlapps.algos.p2sro.p2sro_manager.protobuf.p2sro_manager_pb2_grpc import (
+    add_P2SROManagerServicer_to_server,
+    P2SROManagerStub,
 )
 from rlapps.algos.p2sro.p2sro_manager.remote import (
     RemoteP2SROManagerClient,
@@ -28,6 +23,7 @@ from rlapps.algos.p2sro.p2sro_manager.utils import (
     PolicySpecDistribution,
     SpecDistributionInterface,
 )
+from rlapps.algos.psro_distill.manager.manager import Distiller, PSRODistillManager
 
 
 GRPC_MAX_MESSAGE_LENGTH = 1048576 * 40  # 40MiB
@@ -35,14 +31,11 @@ GRPC_MAX_MESSAGE_LENGTH = 1048576 * 40  # 40MiB
 logger = logging.getLogger(__name__)
 
 
-class _PSRODistillMangerServerServicerImpl(PSRODistillManagerServicer):
+class _PSRODistillMangerServerServicerImpl(_P2SROMangerServerServicerImpl):
     def __init__(self, manager: PSRODistillManager):
-        self._manager = manager
-        _P2SROMangerServerServicerImpl.__init__(self, manager)
+        super().__init__(manager)
 
-    def GetDistilledMetaNash(
-        self, request: psro_distill_proto.PolicySpecJsonList, context
-    ):
+    def GetDistilledMetaNash(self, request: psro_proto.PolicySpecJsonList, context):
         prob_list = request.policy_prob_list
         strategy_spec_list = json.load(request.policy_spec_json_list)
         result = self._manager.distill_meta_nash(prob_list, strategy_spec_list)
@@ -88,9 +81,7 @@ class PSRODistillManagerWithServer(PSRODistillManager):
         servicer = _PSRODistillMangerServerServicerImpl(
             manager=self, stop_server_fn=self.stop_server
         )
-        add_PSRODistillManagerServicer_to_server(
-            servicer=servicer, server=self._grpc_server
-        )
+        add_P2SROManagerServicer_to_server(servicer=servicer, server=self._grpc_server)
         address = f"[::]:{port}"
         self._grpc_server.add_insecure_port(address)
         self._grpc_server.start()  # does not block
@@ -110,34 +101,13 @@ class RemotePSRODistillManagerClient(RemoteP2SROManagerClient):
     process or computer.
     """
 
-    def __init__(
-        self, n_players: int, port: int = 4535, remote_server_host: str = "127.0.0.1"
-    ):
-        self._stub = PSRODistillManagerStub(
-            channel=grpc.insecure_channel(
-                target=f"{remote_server_host}:{port}",
-                options=[
-                    ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
-                    ("grpc.max_receive_message_length", GRPC_MAX_MESSAGE_LENGTH),
-                ],
-            )
-        )
-        server_is_same_num_players: psro_proto.Confirmation = (
-            self._stub.CheckNumPlayers(psro_proto.NumPlayers(num_players=n_players))
-        )
-        if not server_is_same_num_players.result:
-            raise ValueError(
-                "Remote P2SROManger server has a different number of players than this one."
-            )
-        self._n_players = n_players
-
     def distill_meta_nash(
         self, prob_to_strategy_specs: Dict[float, StrategySpec]
     ) -> StrategySpec:
         probs = list(prob_to_strategy_specs.keys())
         specs = list(prob_to_strategy_specs.values())
 
-        request = psro_distill_proto.PolicySpecJsonList(
+        request = psro_proto.PolicySpecJsonList(
             policy_prob_list=probs, policy_spec_json_list=json.dump(specs)
         )
 

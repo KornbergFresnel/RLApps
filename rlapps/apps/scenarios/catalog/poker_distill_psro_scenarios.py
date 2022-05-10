@@ -16,8 +16,8 @@ from rlapps.rllib_tools.modified_policies.simple_q_torch_policy import (
 from rlapps.apps.psro_distill.mawril_metanash import BCDistiller
 
 
-kun_psro_distill_dqn = DistilledPSROScenario(
-    name="kuhn_psro_dqn",
+kuhn_distill_psro_dqn = DistilledPSROScenario(
+    name="kuhn_distill_psro_dqn",
     ray_cluster_cpus=default_if_creating_ray_head(default=8),
     ray_cluster_gpus=default_if_creating_ray_head(default=0),
     ray_object_store_memory_cap_gigabytes=1,
@@ -36,7 +36,10 @@ kun_psro_distill_dqn = DistilledPSROScenario(
     },
     get_trainer_config_br=psro_kuhn_dqn_params,
     trainer_class_distill=MARWILTrainer,
-    policy_classes_distill={"meta_nash": MARWILTorchPolicy, "eval": MARWILTorchPolicy},
+    policy_classes_distill={
+        "distilled_policy": MARWILTorchPolicy,
+        "eval": SimpleQTorchPolicyPatched,
+    },
     get_trainer_config_distill=distill_psro_kuhn_marwil_params,
     get_distiller=lambda scenario: BCDistiller(scenario),
     distill_get_stopping_condition=lambda: EpisodesSingleBRRewardPlateauStoppingCondition(
@@ -64,7 +67,7 @@ kun_psro_distill_dqn = DistilledPSROScenario(
 
 
 leduc_distill_psro_dqn = DistilledPSROScenario(
-    name="leduc_psro_dqn",
+    name="leduc_distill_psro_dqn",
     ray_cluster_cpus=default_if_creating_ray_head(default=8),
     ray_cluster_gpus=default_if_creating_ray_head(default=0),
     ray_object_store_memory_cap_gigabytes=1,
@@ -110,4 +113,5 @@ leduc_distill_psro_dqn = DistilledPSROScenario(
     calc_exploitability_for_openspiel_env=True,
 )
 
+scenario_catalog.add(kuhn_distill_psro_dqn)
 scenario_catalog.add(leduc_distill_psro_dqn)
