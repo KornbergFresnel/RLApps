@@ -8,9 +8,10 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.utils.typing import PolicyID, AgentID
 from ray.rllib.policy import Policy
 from ray.rllib.agents.dqn import DQNTorchPolicy
-from rlapps.envs.poker_multi_agent_env import PokerMultiAgentEnv
 
+from rlapps.envs.poker_multi_agent_env import PokerMultiAgentEnv
 from rlapps.rllib_tools.policy_checkpoints import create_get_pure_strat_cached
+from rlapps.algos.p2sro.p2sro_manager.utils import SpecDistributionInterface
 
 
 @dataclass
@@ -44,21 +45,27 @@ class SingleAgentEnv(gym.Env):
             if aid != env_config["br_player"]
         }
         active_policy_ids = set(agent_to_policy_id.values())
-        load_from_strategy = create_get_pure_strat_cached({})
+        load_from_spec = create_get_pure_strat_cached({})
 
-        fixed_policies = {}
+        fixed_policies: Dict[PolicyID, Policy] = {}
+        spec_distribution: Dict[PolicyID, SpecDistributionInterface] = {}
         for policy_id in active_policy_ids:
             policy_cls, obs_space, act_space, custom_config = policy_spec[policy_id]
+
             policy = policy_cls(obs_space, act_space, custom_config)
+            fixed_policies[policy_id] = policy
 
             if "strategy_spec_dict" in env_config["multiagent"]:
-                spec_dict = env_config["multiagent"]["strategy_spec_dict"]
-                load_from_strategy(policy, spec_dict[policy_id])
-            fixed_policies[policy_id] = policy
+                prob_list, spec_list = env_config["multiagent"]["strategy_spec_dict"][
+                    policy_id
+                ]
+                spec_distribution[policy_id] = SpecDistributionInterface(
+                    dict(zip(prob_list, spec_list))
+                )
 
         self.br_player = env_config["br_player"]
         self.agent_ids = agent_ids
-        self.load_from_strategy = load_from_strategy
+        self.load_from_spec = load_from_spec
         self.fixed_policies: Dict[PolicyID, Policy] = fixed_policies
         self.agent_to_policy_id = agent_to_policy_id
         self.observation_space = self.ma_env.observation_space
@@ -70,6 +77,7 @@ class SingleAgentEnv(gym.Env):
             for agent in agent_ids
         }
         self.step_cnt = 0.0
+        self.spec_distribution = spec_distribution
 
     def _step_until_br_met(self, new_obs, actions, rewards, dones, infos):
         for k in new_obs.keys():
@@ -117,6 +125,10 @@ class SingleAgentEnv(gym.Env):
         rewards = {}
         dones = {}
         self.step_cnt = 0
+
+        for policy_id, spec_distribution in self.spec_distribution.items():
+            spec = spec_distribution.sample_policy_spec()
+            self.load_from_spec(self.fixed_policies[policy_id], spec)
 
         if self.br_player in obs:
             return obs[self.br_player]
