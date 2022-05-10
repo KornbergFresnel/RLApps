@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, Tuple
+from typing import Any, Tuple, Dict
 
 import argparse
 import logging
@@ -10,9 +10,10 @@ import numpy as np
 import ray
 
 from ray.rllib.agents.trainer import with_common_config
+from ray.rllib.agents.callbacks import DefaultCallbacks
 from ray.rllib.models.preprocessors import get_preprocessor
-from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.evaluation.sample_batch_builder import MultiAgentSampleBatchBuilder
+from ray.rllib.policy.sample_batch import SampleBatch, MultiAgentBatch
+from ray.rllib.evaluation.sample_batch_builder import SampleBatchBuilder
 from ray.rllib.offline.json_writer import JsonWriter
 
 from rlapps.algos.p2sro.eval_dispatcher.remote import RemoteEvalDispatcherClient
@@ -24,28 +25,75 @@ from rlapps.rllib_tools.policy_checkpoints import load_pure_strat
 from rlapps.utils.port_listings import get_client_port_for_service
 
 
+def store_frames_to_builders(
+    prep,
+    agent_step,
+    eps_id,
+    agent_batch_dict: Dict[int, Dict[str, Any]],
+    obs,
+    reward,
+    done,
+    action,
+    next_obs,
+    infos,
+):
+    agents = list(agent_batch_dict.keys())
+    # CUR_OBS, ACTION, REWERAD, DONE, INFOS
+    for k, _obs in obs.items():
+        if k not in agents:
+            continue
+        agent_batch_dict[k][SampleBatch.CUR_OBS].append(prep.transform(_obs))
+    for k, _r in reward.items():
+        if k not in agents:
+            continue
+        agent_batch_dict[k][SampleBatch.REWARDS].append(_r)
+    if done["__all__"]:
+        for agent in agents:
+            agent_batch_dict[agent][SampleBatch.DONES].append(True)
+            if len(agent_batch_dict[agent][SampleBatch.DONES]) > len(
+                agent_batch_dict[agent][SampleBatch.CUR_OBS]
+            ):
+                # shift
+                for k in [SampleBatch.REWARDS, SampleBatch.DONES]:
+                    agent_batch_dict[agent][k] = agent_batch_dict[agent][k][1:]
+    else:
+        for k, _done in done.items():
+            if k not in agents:
+                continue
+            agent_batch_dict[k][SampleBatch.DONES].append(_done)
+    for k, _action in action.items():
+        if k not in agents:
+            continue
+        agent_batch_dict[k][SampleBatch.ACTIONS].append(_action)
+    for k, _info in infos.items():
+        if k not in agents:
+            continue
+        agent_batch_dict[k][SampleBatch.INFOS].append(_info)
+
+
 def run_episode(
-    env, policies_for_each_player, store_as_offline: bool = False
-) -> Tuple[np.ndarray, Any]:
+    env,
+    policies_for_each_player,
+    store_as_offline: bool = False,
+) -> Tuple[np.ndarray, Dict[int, SampleBatch]]:
     num_players = len(policies_for_each_player)
 
     if store_as_offline:
-        batch_builder = MultiAgentSampleBatchBuilder(policy_map=None)
+        agent_batch_dict = {i: defaultdict(lambda: []) for i in range(num_players)}
         prep = get_preprocessor(env.observation_space)(env.observation_space)
     else:
-        batch_builder = None
+        agent_batch_dict = None
         prep = None
 
     obs = env.reset()
     dones = {}
     game_length = 0
     policy_states = [policy.get_initial_state() for policy in policies_for_each_player]
+    # agent_to_pid = dict(zip(range(num_players), policy_id_for_each_player))
 
     payoffs_per_player_this_episode = np.zeros(shape=num_players, dtype=np.float64)
-    prev_rewards = {}
-    prev_actions = {}
-
-    action_space = env.action_space
+    agent_step = defaultdict(lambda: 0)
+    episode_id = int(time.time())
 
     while True:
         if "__all__" in dones:
@@ -63,6 +111,7 @@ def run_episode(
                 policy_states[player] = new_policy_state
                 action_dict[player] = action_index
                 action_info_dict[player] = action_info
+                agent_step[player] += 1
 
         new_obs, rewards, dones, infos = env.step(action_dict=action_dict)
 
@@ -72,40 +121,28 @@ def run_episode(
                 player, 0.0
             )
 
-            if store_as_offline and player in obs:
-                batch_builder.add_values(
-                    agent_id=player,
-                    policy_id=None,
-                    t=game_length,
-                    **{
-                        SampleBatch.CUR_OBS: prep.transform(obs[player]),
-                        SampleBatch.ACTIONS: action_index,
-                        SampleBatch.ACTION_PROB: action_info_dict[player][
-                            SampleBatch.ACTION_PROB
-                        ],
-                        SampleBatch.ACTION_LOGP: action_info_dict[player][
-                            SampleBatch.ACTION_LOGP
-                        ],
-                        SampleBatch.REWARDS: rewards[player],
-                        SampleBatch.PREV_ACTIONS: prev_actions.get(
-                            player, action_space.sample()
-                        ),
-                        SampleBatch.PREV_REWARDS: prev_rewards.get(player, 0.0),
-                        SampleBatch.DONES: dones[player],
-                        SampleBatch.INFOS: infos.get(player, {}),
-                        # SampleBatch.NEXT_OBS: prep.transform(new_obs[player]),
-                    },
-                )
-
-        for player in obs:
-            prev_actions[player] = action_dict[player]
-            prev_rewards = rewards[player]
+        if store_as_offline:
+            # parse frame to save for each player
+            store_frames_to_builders(
+                prep,
+                agent_step,
+                episode_id,
+                agent_batch_dict,
+                obs,
+                rewards,
+                dones,
+                action_dict,
+                new_obs,
+                infos,
+            )
 
         obs = new_obs
         game_length += 1
 
     if store_as_offline:
-        samples = batch_builder.build_and_reset()
+        # TODO(ming): note since rllib does not support multiagent json reader yet, I return a dict of batches.
+        #   see: https://github.com/ray-project/ray/issues/24283
+        samples = {k: SampleBatch(**v) for k, v in agent_batch_dict.items()}
     else:
         samples = None
 
@@ -162,7 +199,6 @@ def run_poker_evaluation_loop(
             # print(f"Got eval matchup:")
             # for spec in policy_specs_for_each_player:
             #     print(f"spec: {spec.to_json()}")
-
             for policy, spec in zip(policies, policy_specs_for_each_player):
                 load_pure_strat(policy=policy, pure_strat_spec=spec)
 
