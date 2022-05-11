@@ -61,6 +61,7 @@ class EvalResult(object):
         self.policy_specs_for_each_player = policy_specs_for_each_player
         self.payoff_for_each_player = payoff_for_each_player
         self.games_played = games_played
+        # buffer file path is actually a dict
         self.buffer_file_path = buffer_file_path
 
 

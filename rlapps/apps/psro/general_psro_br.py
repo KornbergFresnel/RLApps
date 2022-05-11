@@ -348,6 +348,7 @@ def train_psro_best_response(
         "callbacks": rllib_callbacks or P2SROPreAndPostEpisodeCallbacks,
         "env": env_class,
         "env_config": env_config,
+        "disable_env_checking": True,
         "gamma": 1.0,
         "num_gpus": 0.2,
         "num_workers": 0,

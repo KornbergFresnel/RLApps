@@ -51,6 +51,7 @@ def get_latest_metanash_strategies(
     fictitious_play_iters: int,
     mix_with_uniform_dist_coeff: float = 0.0,
     print_matrix: bool = True,
+    include_as_player: bool = False,
 ) -> Union[None, Dict[int, PolicySpecDistribution]]:
     # Currently this function only handles 2-player games
     if as_policy_num is None:
@@ -118,6 +119,13 @@ def get_latest_metanash_strategies(
             player=other_player,
             policy_selection_probs_indexed_by_policy_num=selection_probs,
         )
+
+        if include_as_player:
+            opponent_strategy_distributions[as_player] = PolicySpecDistribution(
+                payoff_table=payoff_table,
+                player=as_player,
+                policy_selection_probs_indexed_by_policy_num=np.copy(col_averages[-1]),
+            )
 
     return opponent_strategy_distributions
 

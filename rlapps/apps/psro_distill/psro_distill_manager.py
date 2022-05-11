@@ -94,6 +94,7 @@ def launch_manager(
             ray_head_address=ray_head_address,
             eval_dispatcher_port=eval_port,
             eval_dispatcher_host="localhost",
+            store_as_offline=True,
         )
         print(f"Launched evals")
 
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scenario", type=str, reuqired=True)
+    parser.add_argument("--scenario", type=str, required=True)
     parser.add_argument("--psro_port", type=int, required=False, default=None)
     parser.add_argument("--eval_port", type=int, required=False, default=None)
     commandline_args = parser.parse_args()

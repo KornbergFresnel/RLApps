@@ -3,6 +3,8 @@ from concurrent import futures
 from typing import Tuple, List, Union
 
 import grpc
+import json
+
 from google.protobuf.empty_pb2 import Empty
 
 from rlapps.algos.p2sro.eval_dispatcher.eval_dispatcher import EvalDispatcher
@@ -46,6 +48,7 @@ class _EvalDispatcherServerServicerImpl(EvalDispatcherServicer):
             policy_specs_for_each_player_tuple=policy_specs_for_each_player,
             payoffs_for_each_player=request.payoffs_for_each_player,
             games_played=request.games_played,
+            buffer_file_path=json.loads(s=request.buffer_file_path),
         )
         return EvalConfirmation(result=True)
 
@@ -113,10 +116,10 @@ class RemoteEvalDispatcherClient(EvalDispatcher):
         policy_specs_for_each_player_tuple,
         payoffs_for_each_player: List[float],
         games_played,
-        buffer_file_path="",
+        buffer_file_path={},
     ):
         request = EvalJobResult(
-            games_played=games_played, buffer_file_path=buffer_file_path
+            games_played=games_played, buffer_file_path=json.dumps(obj=buffer_file_path)
         )
         request.json_policy_specs_for_each_player.extend(
             spec.to_json() for spec in policy_specs_for_each_player_tuple

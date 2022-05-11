@@ -4,6 +4,7 @@ from concurrent import futures
 from typing import Tuple, List, Dict, Callable, Union, Any
 
 import grpc
+import traceback
 
 from ray.rllib.agents import Trainer
 from ray.rllib.evaluation import RolloutWorker
@@ -32,19 +33,27 @@ logger = logging.getLogger(__name__)
 
 
 class _PSRODistillMangerServerServicerImpl(_P2SROMangerServerServicerImpl):
-    def __init__(self, manager: PSRODistillManager):
+    def __init__(self, manager: PSRODistillManager, stop_server_fn: Callable):
         super().__init__(manager)
+        self._stop_server_fn = stop_server_fn
 
     def GetDistilledMetaNash(self, request: psro_proto.PolicySpecJsonList, context):
-        metanash_player = request.metanash_player
-        policy_dist_json_list = request.policy_dist_json_list
-        probs_list, specs_list = [], []
-        for dist in policy_dist_json_list:
-            probs_list.append(dist.probs)
-            specs_list.append(json.load(dist.specs))
-        result = self._manager.distill_meta_nash(
-            metanash_player, probs_list, specs_list
-        )
+        with self._manager._modification_lock:
+            try:
+                metanash_player = request.metanash_player
+                policy_dist_json_list = request.policy_dist_json_list
+                probs_list, specs_list = [], []
+                for dist in policy_dist_json_list:
+                    probs_list.append(dist.probs)
+                    specs_list.append([StrategySpec.from_json(e) for e in dist.specs])
+                result = self._manager.distill_meta_nash(
+                    metanash_player, probs_list, specs_list
+                )
+            except Exception as err:
+                print(f"{type(err)}: {err}")
+                traceback.print_exc()
+                print("Submitting BR failed, shutting down manager.")
+                self._stop_server_fn()
         return psro_proto.PolicySpecJson(policy_spec_json=result.to_json())
 
 
@@ -65,11 +74,11 @@ class PSRODistillManagerWithServer(PSRODistillManager):
     ):
         super().__init__(
             n_players=n_players,
-            is_two_players_symmetric_zero_sum=is_two_player_symmetric_zero_sum,
+            is_two_player_symmetric_zero_sum=is_two_player_symmetric_zero_sum,
             do_external_payoff_evals_for_new_fixed_policies=do_external_payoff_evals_for_new_fixed_policies,
-            game_per_external_payoff_eval=games_per_external_payoff_eval,
-            eval_distpatcher_port=eval_dispatcher_port,
-            distiler=distiller,
+            games_per_external_payoff_eval=games_per_external_payoff_eval,
+            eval_dispatcher_port=eval_dispatcher_port,
+            distiller=distiller,
             payoff_table_exponential_average_coeff=payoff_table_exponential_average_coeff,
             get_manager_logger=get_manager_logger,
             log_dir=log_dir,
@@ -118,10 +127,12 @@ class RemotePSRODistillManagerClient(RemoteP2SROManagerClient):
         request = psro_proto.PolicySpecJsonList(metanash_player=metanash_player)
         for probs, specs in zip(probs_list, specs_list):
             request.policy_dist_json_list.append(
-                psro_proto.PolicyDistJson(probs=probs, specs=specs)
+                psro_proto.PolicyDistJson(
+                    probs=probs, specs=[e.to_json() for e in specs]
+                )
             )
 
-        json_str = self._stub.GetDistilledMetaNash(request)
+        json_str = self._stub.GetDistilledMetaNash(request).policy_spec_json
         distilled_strategy_spec = StrategySpec.from_json(json_str)
         return distilled_strategy_spec
 
@@ -153,18 +164,24 @@ def update_all_workers_to_latest_metanash(
         active_policy_nums,
         fixed_policy_nums,
     ) = p2sro_manager.get_copy_of_latest_data()
+
+    as_player = 1 if one_agent_plays_all_sides else br_player
     latest_strategies: Dict[
         int, PolicySpecDistribution
     ] = get_latest_metanash_strategies(
         payoff_table=latest_payoff_table,
-        as_player=1 if one_agent_plays_all_sides else br_player,
+        as_player=as_player,
         as_policy_num=active_policy_num,
         fictitious_play_iters=2000,
         mix_with_uniform_dist_coeff=mix_metanash_with_uniform_dist_coeff,
+        include_as_player=True,
     )
 
     if latest_strategies is None:
-        opponent_policy_distribution = None
+        logger.log(
+            logging.WARNING, "latest strategies is None, will use default metanash"
+        )
+        policy_distribution = None
     else:
         opponent_player = 0 if one_agent_plays_all_sides else metanash_player
         print(
@@ -175,31 +192,24 @@ def update_all_workers_to_latest_metanash(
             f"metanash for player {opponent_player}: "
             f"{latest_strategies[opponent_player].probabilities_for_each_strategy()}"
         )
-
-        # get the strategy distribution for the opposing player.
-        opponent_policy_distribution = latest_strategies[opponent_player]
-
-        # double check that these policy specs are for the opponent player
-        assert (
-            opponent_player
-            in opponent_policy_distribution.sample_policy_spec()
-            .get_pure_strat_indexes()
-            .keys()
+        print(
+            f"latest payoff matrix for player {as_player}:\n"
+            f"{latest_payoff_table.get_payoff_matrix_for_player(player=as_player)}"
         )
-
-    # TODO(ming): send training request to manager
-    prob_to_strategy_specs: Dict[float, StrategySpec] = latest_payoff_table[
-        opponent_player
-    ].probs_to_specs
-
-    distilled_strategy_spec = p2sro_manager.distill_meta_nash(
-        metanash_player, prob_to_strategy_specs
-    )
+        print(
+            f"metanash for player {as_player}: "
+            f"{latest_strategies[as_player].probabilities_for_each_strategy()}"
+        )
+        distilled_strategy_spec = p2sro_manager.distill_meta_nash(
+            metanash_player,
+            prob_to_strategy_specs_each=[
+                latest_strategies[k].probs_to_specs for k in [0, 1]
+            ],
+        )
+        policy_distribution = SpecDistributionInterface({1.0: distilled_strategy_spec})
 
     def _set_opponent_policy_for_worker(worker: RolloutWorker):
-        worker.opponent_policy_distribution = SpecDistributionInterface(
-            {1.0: distilled_strategy_spec}
-        )
+        worker.opponent_policy_distribution = policy_distribution
 
     # update all workers with newest meta policy
     trainer.workers.foreach_worker(_set_opponent_policy_for_worker)

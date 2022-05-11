@@ -1,3 +1,5 @@
+import ray
+
 from ray.rllib.agents.dqn import DQNTrainer
 from ray.rllib.agents.ppo import PPOTrainer, PPOTorchPolicy
 from ray.rllib.agents.marwil import MARWILTrainer, MARWILTorchPolicy
@@ -47,6 +49,12 @@ kuhn_distill_psro_dqn = DistilledPSROScenario(
         minimum_reward_improvement_otherwise_plateaued=0.01,
         max_training_iteration=int(1e5),
     ),
+    get_buffer_directory=lambda scenario, br_player, br_ids: os.path.join(
+        ray._private.utils.get_user_temp_dir(),
+        scenario.name,
+        str(br_player),
+        "_vs_".join(br_ids),
+    ),
     num_eval_workers=8,
     games_per_payoff_eval=20000,
     p2sro=False,
@@ -92,6 +100,12 @@ leduc_distill_psro_dqn = DistilledPSROScenario(
         dont_check_plateau_before_n_iteration=int(64),
         minimum_reward_improvement_otherwise_plateaued=0.01,
         max_training_iteration=int(1e5),
+    ),
+    get_buffer_directory=lambda scenario, br_player, br_ids: os.path.join(
+        ray._private.utils.get_user_temp_dir(),
+        scenario.name,
+        str(br_player),
+        "_vs_".join(br_ids),
     ),
     num_eval_workers=8,
     games_per_payoff_eval=3000,

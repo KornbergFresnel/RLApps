@@ -12,6 +12,7 @@ import ray
 import numpy as np
 
 from ray.rllib.utils import merge_dicts
+from ray.rllib.policy.sample_batch import DEFAULT_POLICY_ID
 from ray.rllib.agents import Trainer
 
 from rlapps.utils.strategy_spec import StrategySpec
@@ -56,13 +57,18 @@ class BCDistiller(Distiller):
         )
 
         tmp_env = env_class(env_config=env_config)
-        stopping_condition = self.scenario.distill_get_stopping_condition
+        stopping_condition = self.scenario.distill_get_stopping_condition()
         print_train_results = True
 
-        joint_policy_mapping = manager_metadata["offline_dataset"]
+        joint_policy_mapping = manager_metadata["offline_dataset"][metanash_player]
+        assert (
+            len(joint_policy_mapping) > 0
+        ), "joint policy mapping for metanash player={} is empty: {}".format(
+            metanash_player, manager_metadata["offline_dataset"]
+        )
         offline_weighted_inputs = {}
         # build keys
-        for prod in itertools.product(spec_list_each_player):
+        for prod in itertools.product(*spec_list_each_player):
             key = "&".join([e.id for e in prod])
             joint_prob = functools.reduce(
                 operator.mul,
@@ -101,19 +107,19 @@ class BCDistiller(Distiller):
             "multiagent": {
                 "policies": {
                     "eval": (
-                        self.scenario.policy_classes_distill["eval"],
+                        self.scenario.policy_classes["eval"],
                         tmp_env.observation_space,
                         tmp_env.action_space,
                         {},
                     )
                 },
                 "policy_mapping_fn": select_policy,
-                "strategy_spec_dict": {
-                    "eval": (
-                        prob_list_each_player[other],
-                        spec_list_each_player[other],
-                    )
-                },
+                # "strategy_spec_dict": {
+                #     "eval": (
+                #         prob_list_each_player[other],
+                #         spec_list_each_player[other],
+                #     )
+                # },
             },
         }
 
@@ -130,7 +136,7 @@ class BCDistiller(Distiller):
         )
 
         trainer = self.scenario.trainer_class_distill(
-            training_config,
+            config=training_config,
             logger_creator=get_trainer_logger_creator(
                 base_dir=log_dir,
                 scenario_name="marwil_trainer",
@@ -144,6 +150,7 @@ class BCDistiller(Distiller):
             print(f"({meta_learner_name}): {message}")
 
         while True:
+            print("training ")
             train_results = trainer.train()
 
             if print_train_results:
@@ -161,8 +168,9 @@ class BCDistiller(Distiller):
             trainer=trainer,
             player=metanash_player,
             save_dir=checkpoint_dir(trainer=trainer),
-            policy_id_to_save=f"distilled_{metanash_player}",
+            policy_id_to_save=DEFAULT_POLICY_ID,
             checkpoint_name=f"{strategy_id}.h5",
+            additional_data={},
         )
 
         distilled_strategy_spec = StrategySpec(
@@ -170,7 +178,7 @@ class BCDistiller(Distiller):
             metadata={"checkpoint_path": checkpoint_path},
         )
 
-        ray.kill(trainer.workers.local_worker().replay_buffer_actor)
+        # ray.kill(trainer.workers.local_worker().replay_buffer_actor)
         del trainer
         # del avg_br_reward_deque
 

@@ -34,6 +34,7 @@ class DistilledPSROScenario(PSROScenario):
         trainer_class_distill: Type[Trainer],
         policy_classes_distill: Dict[str, Type[Policy]],
         get_trainer_config_distill: Callable[[MultiAgentEnv], Dict[str, Any]],
+        get_buffer_directory: Callable[[Scenario, int], str],
         # ==================================
         get_distiller: Callable[[Scenario], Distiller],
         # parse offline storage and return
@@ -81,3 +82,4 @@ class DistilledPSROScenario(PSROScenario):
         self.distill_get_stopping_condition = distill_get_stopping_condition
         self.calculate_openspiel_metanash_at_end = True
         self.player_num = 2
+        self.get_buffer_directory = get_buffer_directory

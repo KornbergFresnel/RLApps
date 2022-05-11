@@ -202,6 +202,8 @@ class EvalRewardStopping(StoppingCondition):
         )["episode_reward_mean"]
         if br_reward_this_iter == float("inf"):
             return False
+
+        should_stop = False
         if n_iteration >= self.dont_check_plateau_before_n_iteration:
             if self._last_saturation_check_reward is not None:
                 improvement_since_last_check = (

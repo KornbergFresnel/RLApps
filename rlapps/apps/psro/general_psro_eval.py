@@ -25,6 +25,9 @@ from rlapps.rllib_tools.policy_checkpoints import load_pure_strat
 from rlapps.utils.port_listings import get_client_port_for_service
 
 
+logger = logging.getLogger(__name__)
+
+
 def store_frames_to_builders(
     prep,
     agent_step,
@@ -195,7 +198,7 @@ def run_poker_evaluation_loop(
         for _ in range(num_players)
     ]
 
-    buffer_list = []
+    buffer_list = defaultdict(lambda: [])
 
     while True:
         (
@@ -238,7 +241,8 @@ def run_poker_evaluation_loop(
                 )
 
                 if samples is not None:
-                    buffer_list.append(samples)
+                    for k, e in samples.items():
+                        buffer_list[k].append(samples[k])
 
                 total_payoffs_per_player += payoffs_per_player_this_episode
 
@@ -257,21 +261,28 @@ def run_poker_evaluation_loop(
             )
 
             # save buffers
-            if len(buffer_list) > 0:
-                dir_name = os.path.join(
-                    ray._private.utils.get_user_temp_dir(),
-                    scenario_name,
-                    f"{policy_specs_for_each_player[0].id}_vs_{policy_specs_for_each_player[1].id}",
-                )
-
-                if not os.path.exists(dir_name):
-                    os.makedirs(dir_name)
-                buffer_file_path = os.path.join(dir_name, str(time.time()))
-                writer = JsonWriter(buffer_file_path)
-                for e in buffer_list:
-                    writer.write(e)
+            buffer_list = dict(buffer_list)
+            if store_as_offline and len(buffer_list) > 0:
+                buffer_file_path = {}
+                br_ids = [x.id for x in policy_specs_for_each_player]
+                for br_player in [0, 1]:
+                    dir_name = scenario.get_buffer_directory(
+                        scenario, br_player, br_ids
+                    )
+                    if not os.path.exists(dir_name):
+                        os.makedirs(dir_name)
+                    buffer_file_path[br_player] = dir_name
+                    writer = JsonWriter(buffer_file_path[br_player])
+                    for e in buffer_list[br_player]:
+                        writer.write(e)
             else:
-                buffer_file_path = ""
+                logger.log(
+                    logging.WARNING,
+                    "no available buffers stored, return empty path: {}".format(
+                        buffer_list
+                    ),
+                )
+                buffer_file_path = {}
 
             eval_dispatcher.submit_eval_job_result(
                 policy_specs_for_each_player_tuple=policy_specs_for_each_player,
@@ -287,6 +298,7 @@ def launch_evals(
     eval_dispatcher_host: str,
     block=True,
     ray_head_address=None,
+    store_as_offline=False,
 ):
 
     scenario: PSROScenario = scenario_catalog.get(scenario_name=scenario_name)
@@ -298,7 +310,7 @@ def launch_evals(
     num_workers = scenario.num_eval_workers
     evaluator_refs = [
         run_poker_evaluation_loop.remote(
-            scenario_name, eval_dispatcher_port, eval_dispatcher_host
+            scenario_name, eval_dispatcher_port, eval_dispatcher_host, store_as_offline
         )
         for _ in range(num_workers)
     ]

@@ -1,20 +1,14 @@
-from collections import defaultdict
-from typing import Dict, Union, List
+from typing import Union
 
 import os
 import numpy as np
 import ray._private.utils
 
-from ray.rllib.utils.typing import PolicyID, AgentID
 from ray.rllib.agents.trainer import with_common_config
 from ray.rllib.agents.marwil import MARWILTrainer
-from ray.rllib.agents.marwil import DEFAULT_CONFIG as MARIL_CONFIG
 from ray.rllib.offline.json_writer import JsonWriter
-from ray.rllib.utils import merge_dicts
-from ray.rllib.agents.callbacks import DefaultCallbacks
 
 from rlapps.envs.ma_to_single_env import SingleAgentEnv
-from rlapps.envs.poker_multi_agent_env import PokerMultiAgentEnv
 from rlapps.apps.scenarios.catalog import scenario_catalog
 from rlapps.apps.scenarios.psro_scenario import PSROScenario
 from rlapps.apps.scenarios.psro_distill_scenario import DistilledPSROScenario
@@ -108,7 +102,7 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
 
     config.update(
         {
-            "input": buffer_file_path,
+            "input": {buffer_file_path: 1.0},
             "env": SingleAgentEnv,
             "env_config": runtime_single_agent_env_config,
         }
