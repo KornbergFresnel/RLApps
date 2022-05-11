@@ -11,6 +11,7 @@ from ray.rllib.agents.marwil import MARWILTrainer
 from ray.rllib.agents.marwil import DEFAULT_CONFIG as MARIL_CONFIG
 from ray.rllib.offline.json_writer import JsonWriter
 from ray.rllib.utils import merge_dicts
+from ray.rllib.agents.callbacks import DefaultCallbacks
 
 from rlapps.envs.ma_to_single_env import SingleAgentEnv
 from rlapps.envs.poker_multi_agent_env import PokerMultiAgentEnv
@@ -18,6 +19,7 @@ from rlapps.apps.scenarios.catalog import scenario_catalog
 from rlapps.apps.scenarios.psro_scenario import PSROScenario
 from rlapps.apps.scenarios.psro_distill_scenario import DistilledPSROScenario
 from rlapps.apps.psro.general_psro_eval import run_episode
+from rlapps.utils.strategy_spec import StrategySpec
 
 
 def collect(
@@ -81,6 +83,10 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
     print("collect done..")
 
     prob_list = [0.1, 0.2, 0.7]
+    spec_list = [
+        StrategySpec(policy_id, {})
+        for policy_id in ["policy_1", "policy_2", "policy_3"]
+    ]
 
     runtime_single_agent_env_config = {
         "env_class": scenario.env_class,
@@ -96,23 +102,13 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
                 )
             },
             "policy_mapping_fn": lambda agent_id: "eval",
+            "strategy_spec_dict": {"eval": (prob_list, spec_list)},
         },
     }
 
-    config = MARIL_CONFIG.copy()
-    config["num_workers"] = 2
-    config["evaluation_num_workers"] = 1
-    config["evaluation_interval"] = 3
-    config["evaluation_duration"] = 5
-    config["evaluation_parallel_to_training"] = True
-    config["evaluation_config"] = {"input": "sampler"}
-
     config.update(
         {
-            "framework": "torch",
             "input": buffer_file_path,
-            "observation_space": tmp_env.observation_space,
-            "action_space": tmp_env.action_space,
             "env": SingleAgentEnv,
             "env_config": runtime_single_agent_env_config,
         }
@@ -126,8 +122,15 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
     for i in range(num_iterations):
         results = trainer.train()
         eval_results = results.get("evaluation")
+        # print("iter={} R={} totoal={}".format(i, results["hist_stats"], results["episodes_total"]))
         if eval_results:
-            print("iter={} R={} ".format(i, eval_results["episode_reward_mean"]))
+            print(
+                "iter={} R={} {}".format(
+                    i,
+                    eval_results["episode_reward_mean"],
+                    results["training_iteration"],
+                )
+            )
             # Learn until some reward is reached on an actual live env.
             if eval_results["episode_reward_mean"] > min_reward:
                 print("learnt!")
@@ -136,7 +139,7 @@ def run_single_agent_il(scenario: DistilledPSROScenario, num_iterations: int):
 
 if __name__ == "__main__":
     scenario_name = "kuhn_distill_psro_dqn"
-    num_iterations = 10
+    num_iterations = 1000
     run_single_agent_il(
         scenario=scenario_catalog.get(scenario_name), num_iterations=num_iterations
     )

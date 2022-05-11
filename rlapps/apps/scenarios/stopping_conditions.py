@@ -176,6 +176,62 @@ class EpisodesSingleBRRewardPlateauStoppingCondition(StoppingCondition):
         return should_stop
 
 
+class EvalRewardStopping(StoppingCondition):
+    def __init__(
+        self,
+        max_training_iteration: int,
+        dont_check_plateau_before_n_iteration: int,
+        minimum_reward_improvement_otherwise_plateaued: float,
+    ) -> None:
+        self.max_training_iteration = max_training_iteration
+        self.minimum_reward_imp = minimum_reward_improvement_otherwise_plateaued
+        self.dont_check_plateau_before_n_iteration = (
+            dont_check_plateau_before_n_iteration
+        )
+        self.minimum_reward_improvement_otherwise_saturated = (
+            minimum_reward_improvement_otherwise_plateaued
+        )
+        self._last_saturation_check_reward = None
+
+    def should_stop_this_iter(
+        self, latest_trainer_result: dict, *args, **kwargs
+    ) -> bool:
+        n_iteration = latest_trainer_result["training_iteration"]
+        br_reward_this_iter = latest_trainer_result.get(
+            "evaluation", {"episode_reward_mean": float("inf")}
+        )["episode_reward_mean"]
+        if br_reward_this_iter == float("inf"):
+            return False
+        if n_iteration >= self.dont_check_plateau_before_n_iteration:
+            if self._last_saturation_check_reward is not None:
+                improvement_since_last_check = (
+                    br_reward_this_iter - self._last_saturation_check_reward
+                )
+                logger.info(
+                    f"Improvement since last saturation check: {improvement_since_last_check}, minimum target is "
+                    f"{self.minimum_reward_improvement_otherwise_saturated}."
+                )
+                if (
+                    improvement_since_last_check
+                    < self.minimum_reward_improvement_otherwise_saturated
+                ):
+                    # We're no longer improving. Assume we have saturated, and stop training.
+                    logger.info(
+                        f"Improvement target not reached, stopping training if allowed."
+                    )
+                    should_stop = True
+            self._last_saturation_check_reward = br_reward_this_iter
+
+        if n_iteration >= self.max_training_iteration:
+            # Regardless of whether we've saturated, we've been training for too long, so we stop.
+            logger.info(
+                f"Max training iterations reached ({n_iteration}). stopping training if allowed."
+            )
+            should_stop = True
+
+        return should_stop
+
+
 class TimeStepsSingleBRRewardPlateauStoppingCondition(StoppingCondition):
     def __init__(
         self,

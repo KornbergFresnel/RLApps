@@ -15,7 +15,7 @@ from ray.rllib.utils import merge_dicts
 from ray.rllib.agents import Trainer
 
 from rlapps.utils.strategy_spec import StrategySpec
-from rlapps.utils.common import datetime_str
+from rlapps.utils.common import datetime_str, pretty_dict_str
 from rlapps.rllib_tools.space_saving_logger import get_trainer_logger_creator
 from rlapps.rllib_tools.policy_checkpoints import save_policy_checkpoint
 from rlapps.algos.psro_distill.manager.manager import DistillerResult, Distiller
@@ -138,15 +138,16 @@ class BCDistiller(Distiller):
             ),
         )
 
-        training_iteration = 0
+        meta_learner_name = f"new_learner_{metanash_player}"
+
+        def log(message):
+            print(f"({meta_learner_name}): {message}")
+
         while True:
             train_results = trainer.train()
-            eval_results = train_results.get("evaluation")
-            if eval_results:
-                logger.log(
-                    logging.INFO,
-                    "iter={} R={}".format(training_iteration, ["episode_reward_mean"]),
-                )
+
+            if print_train_results:
+                log(pretty_dict_str(train_results))
 
             if stopping_condition.should_stop_this_iter(
                 latest_trainer_result=train_results
@@ -154,8 +155,6 @@ class BCDistiller(Distiller):
                 print("stopping condition met.")
                 final_train_result = deepcopy(train_results)
                 break
-
-            training_iteration += 1
 
         strategy_id = f"distilled_{metanash_player}_{datetime_str()}"
         checkpoint_path = save_policy_checkpoint(

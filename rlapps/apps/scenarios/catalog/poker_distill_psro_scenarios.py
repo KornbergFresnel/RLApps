@@ -42,12 +42,10 @@ kuhn_distill_psro_dqn = DistilledPSROScenario(
     },
     get_trainer_config_distill=distill_psro_kuhn_marwil_params,
     get_distiller=lambda scenario: BCDistiller(scenario),
-    distill_get_stopping_condition=lambda: EpisodesSingleBRRewardPlateauStoppingCondition(
-        br_policy_id="best_response",
-        dont_check_plateau_before_n_episodes=int(2e4),
-        check_plateau_every_n_episodes=int(2e4),
+    distill_get_stopping_condition=lambda: EvalRewardStopping(
+        dont_check_plateau_before_n_iteration=int(64),
         minimum_reward_improvement_otherwise_plateaued=0.01,
-        max_train_episodes=int(1e5),
+        max_training_iteration=int(1e5),
     ),
     num_eval_workers=8,
     games_per_payoff_eval=20000,
@@ -90,12 +88,10 @@ leduc_distill_psro_dqn = DistilledPSROScenario(
     policy_classes_distill={"meta_nash": MARWILTorchPolicy, "eval": MARWILTorchPolicy},
     get_trainer_config_distill=distill_psro_leduc_marwil_params,
     get_distiller=lambda scenario: BCDistiller(scenario),
-    distill_get_stopping_condition=lambda: EpisodesSingleBRRewardPlateauStoppingCondition(
-        br_policy_id="best_response",
-        dont_check_plateau_before_n_episodes=int(2e4),
-        check_plateau_every_n_episodes=int(2e4),
+    distill_get_stopping_condition=lambda: EvalRewardStopping(
+        dont_check_plateau_before_n_iteration=int(64),
         minimum_reward_improvement_otherwise_plateaued=0.01,
-        max_train_episodes=int(1e5),
+        max_training_iteration=int(1e5),
     ),
     num_eval_workers=8,
     games_per_payoff_eval=3000,
