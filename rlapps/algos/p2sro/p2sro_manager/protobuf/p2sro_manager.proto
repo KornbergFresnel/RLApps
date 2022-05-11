@@ -59,9 +59,14 @@ message Metadata {
     string json_metadata = 1;
 }
 
+message PolicyDistJson {
+    repeated float probs = 1;
+    repeated string specs = 2;
+}
+
 message PolicySpecJsonList {
-    repeated float policy_prob_list = 1;
-    repeated PolicySpecJson policy_spec_json_list = 2;
+    int64 metanash_player = 1;
+    repeated PolicyDistJson policy_dist_json_list = 2;
 }
 
 service P2SROManager {

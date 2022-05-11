@@ -36,6 +36,9 @@ class StrategySpec(object):
             pure_strategy_indexes if pure_strategy_indexes is not None else {}
         )
 
+    def __str__(self):
+        return f"<StrategySpec: id={self.id}>"
+
     def assign_pure_strat_index(self, player, pure_strat_index):
         if self._pure_strategy_indexes.get(player) is not None:
             raise ValueError(

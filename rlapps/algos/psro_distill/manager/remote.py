@@ -36,9 +36,15 @@ class _PSRODistillMangerServerServicerImpl(_P2SROMangerServerServicerImpl):
         super().__init__(manager)
 
     def GetDistilledMetaNash(self, request: psro_proto.PolicySpecJsonList, context):
-        prob_list = request.policy_prob_list
-        strategy_spec_list = json.load(request.policy_spec_json_list)
-        result = self._manager.distill_meta_nash(prob_list, strategy_spec_list)
+        metanash_player = request.metanash_player
+        policy_dist_json_list = request.policy_dist_json_list
+        probs_list, specs_list = [], []
+        for dist in policy_dist_json_list:
+            probs_list.append(dist.probs)
+            specs_list.append(json.load(dist.specs))
+        result = self._manager.distill_meta_nash(
+            metanash_player, probs_list, specs_list
+        )
         return psro_proto.PolicySpecJson(policy_spec_json=result.to_json())
 
 
@@ -102,14 +108,18 @@ class RemotePSRODistillManagerClient(RemoteP2SROManagerClient):
     """
 
     def distill_meta_nash(
-        self, prob_to_strategy_specs: Dict[float, StrategySpec]
+        self,
+        metanash_player: int,
+        prob_to_strategy_specs_each: List[Dict[float, StrategySpec]],
     ) -> StrategySpec:
-        probs = list(prob_to_strategy_specs.keys())
-        specs = list(prob_to_strategy_specs.values())
+        probs_list = [list(x.keys()) for x in prob_to_strategy_specs_each]
+        specs_list = [list(x.values()) for x in prob_to_strategy_specs_each]
 
-        request = psro_proto.PolicySpecJsonList(
-            policy_prob_list=probs, policy_spec_json_list=json.dump(specs)
-        )
+        request = psro_proto.PolicySpecJsonList(metanash_player=metanash_player)
+        for probs, specs in zip(probs_list, specs_list):
+            request.policy_dist_json_list.append(
+                psro_proto.PolicyDistJson(probs=probs, specs=specs)
+            )
 
         json_str = self._stub.GetDistilledMetaNash(request)
         distilled_strategy_spec = StrategySpec.from_json(json_str)
@@ -182,7 +192,9 @@ def update_all_workers_to_latest_metanash(
         opponent_player
     ].probs_to_specs
 
-    distilled_strategy_spec = p2sro_manager.distill_meta_nash(prob_to_strategy_specs)
+    distilled_strategy_spec = p2sro_manager.distill_meta_nash(
+        metanash_player, prob_to_strategy_specs
+    )
 
     def _set_opponent_policy_for_worker(worker: RolloutWorker):
         worker.opponent_policy_distribution = SpecDistributionInterface(

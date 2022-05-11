@@ -1,5 +1,6 @@
 from typing import Any, Tuple, Dict
 
+import logging
 import gym
 
 from dataclasses import dataclass
@@ -11,7 +12,11 @@ from ray.rllib.agents.dqn import DQNTorchPolicy
 
 from rlapps.envs.poker_multi_agent_env import PokerMultiAgentEnv
 from rlapps.rllib_tools.policy_checkpoints import create_get_pure_strat_cached
+from rlapps.utils.strategy_spec import StrategySpec
 from rlapps.algos.p2sro.p2sro_manager.utils import SpecDistributionInterface
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -22,6 +27,8 @@ class Frame:
 
 
 class SingleAgentEnv(gym.Env):
+    """Wrapper for multi-agent environments, convert multi-agent to single-agent cases."""
+
     def __init__(self, env_config) -> None:
         self.ma_env: MultiAgentEnv = env_config["env_class"](
             env_config=env_config["env_config"]
@@ -128,7 +135,17 @@ class SingleAgentEnv(gym.Env):
 
         for policy_id, spec_distribution in self.spec_distribution.items():
             spec = spec_distribution.sample_policy_spec()
+            if spec.metadata.get("checkpoint_path") is None:
+                logger.log(
+                    logging.WARNING,
+                    f"use spec: {spec} but no valid checkpoint path can be detected.",
+                )
+                continue
             self.load_from_spec(self.fixed_policies[policy_id], spec)
+            logger.log(
+                logging.DEBUG,
+                f"use spec: {spec} and load model from: {spec.metadata['checkpoint_path']}",
+            )
 
         if self.br_player in obs:
             return obs[self.br_player]
@@ -151,6 +168,12 @@ if __name__ == "__main__":
     obs_space = tmp_env.observation_space
     agent_ids = list(tmp_env.get_agent_ids())
 
+    prob_list = [0.1, 0.2, 0.7]
+    spec_list = [
+        StrategySpec(policy_id, {})
+        for policy_id in ["policy_1", "policy_2", "policy_3"]
+    ]
+
     env_config = {
         "env_class": PokerMultiAgentEnv,
         "env_config": maenv_config,
@@ -165,17 +188,19 @@ if __name__ == "__main__":
                 )
             },
             "policy_mapping_fn": lambda agent_id: "dqn",
+            "strategy_spec_dict": {"dqn": (prob_list, spec_list)},
         },
     }
 
     env = SingleAgentEnv(env_config)
-    done = False
-    obs = env.reset()
-    step = 0
 
-    while not done:
-        obs, reward, done, info = env.step(action_space.sample())
-        step += 1
-        print(f"br: {agent_ids[0]} reward: {reward}")
+    for _ in range(10):
+        step = 0
+        done = False
+        obs = env.reset()
+        while not done:
+            obs, reward, done, info = env.step(action_space.sample())
+            step += 1
+            print(f"br: {agent_ids[0]} reward: {reward}")
 
-    print("--------- total env step: {}".format(env.step_cnt))
+        print("--------- total env step: {}".format(env.step_cnt))

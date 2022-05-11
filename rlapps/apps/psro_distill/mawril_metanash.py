@@ -2,6 +2,7 @@ from copy import deepcopy
 from typing import List
 
 import time
+import logging
 import os
 import functools
 import operator
@@ -9,55 +10,24 @@ import itertools
 
 import ray
 import numpy as np
-import deepdish
 
 from ray.rllib.utils import merge_dicts
 from ray.rllib.agents import Trainer
 
 from rlapps.utils.strategy_spec import StrategySpec
-from rlapps.utils.common import (
-    datetime_str,
-    ensure_dir,
-)
+from rlapps.utils.common import datetime_str
 from rlapps.rllib_tools.space_saving_logger import get_trainer_logger_creator
+from rlapps.rllib_tools.policy_checkpoints import save_policy_checkpoint
 from rlapps.algos.psro_distill.manager.manager import DistillerResult, Distiller
 from rlapps.apps.scenarios.psro_distill_scenario import DistilledPSROScenario
 from rlapps.envs.ma_to_single_env import SingleAgentEnv
 
 
+logger = logging.getLogger(__name__)
+
+
 def checkpoint_dir(trainer: Trainer):
     return os.path.join(trainer.logdir, "br_checkpoints")
-
-
-def save_policy_checkpoint(
-    trainer: Trainer,
-    policy_id_to_save: str,
-    save_dir: str,
-    timesteps_training: int,
-    episodes_training: int,
-    checkpoint_name=None,
-):
-    policy_name = policy_id_to_save
-    date_time = datetime_str()
-    if checkpoint_name is None:
-        checkpoint_name = f"policy_{policy_name}_{date_time}.h5"
-    checkpoint_path = os.path.join(save_dir, checkpoint_name)
-    br_weights = trainer.get_weights([policy_id_to_save])[policy_id_to_save]
-    br_weights = {
-        k.replace(".", "_dot_"): v for k, v in br_weights.items()
-    }  # periods cause HDF5 NaturalNaming warnings
-    ensure_dir(file_path=checkpoint_path)
-    deepdish.io.save(
-        path=checkpoint_path,
-        data={
-            "weights": br_weights,
-            "date_time_str": date_time,
-            "seconds_since_epoch": time.time(),
-            "timesteps_training": timesteps_training,
-            "episodes_training": episodes_training,
-        },
-    )
-    return checkpoint_path
 
 
 class BCDistiller(Distiller):
@@ -68,9 +38,9 @@ class BCDistiller(Distiller):
     def __call__(
         self,
         log_dir: str,
-        br_player: int,
-        br_prob_list_each_player: List[List[float]],
-        br_spec_list_each_player: List[List[StrategySpec]],
+        metanash_player: int,
+        prob_list_each_player: List[List[float]],
+        spec_list_each_player: List[List[StrategySpec]],
         manager_metadata: dict = None,
     ) -> DistillerResult:
 
@@ -78,11 +48,11 @@ class BCDistiller(Distiller):
         env_class = self.scenario.env_class
         env_config = self.scenario.env_config
 
-        assert len(br_prob_list_each_player) == self.scenario.player_num, len(
-            br_prob_list_each_player
+        assert len(prob_list_each_player) == self.scenario.player_num, len(
+            prob_list_each_player
         )
-        assert len(br_spec_list_each_player) == self.scenario.player_num, len(
-            br_spec_list_each_player
+        assert len(spec_list_each_player) == self.scenario.player_num, len(
+            spec_list_each_player
         )
 
         tmp_env = env_class(env_config=env_config)
@@ -92,13 +62,13 @@ class BCDistiller(Distiller):
         joint_policy_mapping = manager_metadata["offline_dataset"]
         offline_weighted_inputs = {}
         # build keys
-        for prod in itertools.product(br_spec_list_each_player):
+        for prod in itertools.product(spec_list_each_player):
             key = "&".join([e.id for e in prod])
             joint_prob = functools.reduce(
                 operator.mul,
                 [
-                    br_prob_list_each_player[player_id][
-                        br_spec_list_each_player[player_id].index(spec)
+                    prob_list_each_player[player_id][
+                        spec_list_each_player[player_id].index(spec)
                     ]
                     for player_id, spec in enumerate(prod)
                 ],
@@ -112,10 +82,10 @@ class BCDistiller(Distiller):
             sum(offline_weighted_inputs.values()),
         )
 
-        other = 1 - br_player
+        other = 1 - metanash_player
 
         def select_policy(agent_id):
-            if agent_id == br_player:
+            if agent_id == metanash_player:
                 raise RuntimeError(
                     "cannot call policy selection for best response player: {}".format(
                         agent_id
@@ -127,7 +97,7 @@ class BCDistiller(Distiller):
         runtime_single_agent_env_config = {
             "env_class": self.scenario.env_class,
             "env_config": self.scenario.env_config,
-            "br_player": br_player,
+            "br_player": metanash_player,
             "multiagent": {
                 "policies": {
                     "eval": (
@@ -140,8 +110,8 @@ class BCDistiller(Distiller):
                 "policy_mapping_fn": select_policy,
                 "strategy_spec_dict": {
                     "eval": (
-                        br_prob_list_each_player[other],
-                        br_spec_list_each_player[other],
+                        prob_list_each_player[other],
+                        spec_list_each_player[other],
                     )
                 },
             },
@@ -173,8 +143,9 @@ class BCDistiller(Distiller):
             train_results = trainer.train()
             eval_results = train_results.get("evaluation")
             if eval_results:
-                print(
-                    "iter={} R={}".format(training_iteration, ["episode_reward_mean"])
+                logger.log(
+                    logging.INFO,
+                    "iter={} R={}".format(training_iteration, ["episode_reward_mean"]),
                 )
 
             if stopping_condition.should_stop_this_iter(
@@ -186,13 +157,12 @@ class BCDistiller(Distiller):
 
             training_iteration += 1
 
-        strategy_id = f"distilled_{br_player}_{datetime_str()}"
+        strategy_id = f"distilled_{metanash_player}_{datetime_str()}"
         checkpoint_path = save_policy_checkpoint(
             trainer=trainer,
-            policy_id_to_save=f"distilled_{br_player}",
+            player=metanash_player,
             save_dir=checkpoint_dir(trainer=trainer),
-            timesteps_training=final_train_result["timesteps_total"],
-            episodes_training=final_train_result["episodes_total"],
+            policy_id_to_save=f"distilled_{metanash_player}",
             checkpoint_name=f"{strategy_id}.h5",
         )
 

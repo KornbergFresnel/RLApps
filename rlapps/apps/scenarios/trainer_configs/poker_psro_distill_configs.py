@@ -35,7 +35,7 @@ def distill_psro_leduc_marwil_params(env: MultiAgentEnv) -> Dict[str, Any]:
                 {
                     "fcnet_activation": "relu",
                     "fcnet_hiddens": [128],
-                    "custom_model": get_valid_action_fcn_class_for_env(env=env),
+                    # "custom_model": get_valid_action_fcn_class_for_env(env=env),
                 },
             ),
         },
@@ -64,7 +64,7 @@ def distill_psro_kuhn_marwil_params(env: MultiAgentEnv) -> Dict[str, Any]:
                 {
                     "fcnet_activation": "relu",
                     "fcnet_hiddens": [128],
-                    "custom_model": get_valid_action_fcn_class_for_env(env=env),
+                    # "custom_model": get_valid_action_fcn_class_for_env(env=env),
                 },
             ),
         },
