@@ -55,7 +55,6 @@ class PSRODistillManager(P2SROManager):
         is_two_player_symmetric_zero_sum: bool,
         do_external_payoff_evals_for_new_fixed_policies: bool,
         games_per_external_payoff_eval: int,
-        distiller: Distiller,
         eval_dispatcher_port: int = 4536,
         payoff_table_exponential_average_coeff: float = None,
         get_manager_logger=None,
@@ -78,41 +77,7 @@ class PSRODistillManager(P2SROManager):
         self._timesteps_total = 0
         self._restricted_game_episodes_this_iter = 0
         self._restricted_game_timesteps_this_iter = 0
-        self._distiller = distiller
-
         self.manager_metadata["offline_dataset"] = {0: {}, 1: {}}
-
-    def distill_meta_nash(
-        self,
-        metanash_player: int,
-        probs_list_each_player: List[float],
-        strategy_spec_list_each_player: List[StrategySpec],
-    ) -> StrategySpec:
-        """Distill a meta strategy to a single strategy spec.
-
-        Args:
-            probs_list (List[float]): A list of probs.
-            strategy_spec_list (List[StrategySpec]): A list of strategy specs.
-
-        Raises:
-            NotImplementedError: _description_
-        """
-
-        with self._modification_lock:
-            print(
-                "*** Distilling meta strategy for player={}...".format(metanash_player)
-            )
-
-            distillation_results = self._distiller(
-                log_dir=self.log_dir,
-                metanash_player=metanash_player,
-                prob_list_each_player=probs_list_each_player,
-                spec_list_each_player=strategy_spec_list_each_player,
-                manager_metadata=self.get_manager_metadata(),
-            )
-
-            # TODO(ming): print results and return strategy spec
-            return distillation_results.distilled_strategy_spec
 
     def _on_finished_eval_result(self, eval_result: EvalResult):
         # updtate offline dataset path recording

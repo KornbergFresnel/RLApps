@@ -14,6 +14,7 @@ import numpy as np
 from ray.rllib.utils import merge_dicts
 from ray.rllib.policy.sample_batch import DEFAULT_POLICY_ID
 from ray.rllib.agents import Trainer
+from ray.rllib.agents.marwil import MARWILTrainer
 
 from rlapps.utils.strategy_spec import StrategySpec
 from rlapps.utils.common import datetime_str, pretty_dict_str
@@ -60,7 +61,8 @@ class BCDistiller(Distiller):
         stopping_condition = self.scenario.distill_get_stopping_condition()
         print_train_results = True
 
-        joint_policy_mapping = manager_metadata["offline_dataset"][metanash_player]
+        joint_policy_mapping = manager_metadata["offline_dataset"][str(metanash_player)]
+        # print("all mapping:", manager_metadata["offline_dataset"])
         assert (
             len(joint_policy_mapping) > 0
         ), "joint policy mapping for metanash player={} is empty: {}".format(
@@ -79,8 +81,6 @@ class BCDistiller(Distiller):
                     for player_id, spec in enumerate(prod)
                 ],
             )
-            if joint_prob < 1e-3:
-                continue
             offline_weighted_inputs[joint_policy_mapping[key]] = joint_prob
 
         assert np.isclose(sum(offline_weighted_inputs.values()), 1.0), (
@@ -114,6 +114,7 @@ class BCDistiller(Distiller):
                     )
                 },
                 "policy_mapping_fn": select_policy,
+                # FIXME(ming): model load error
                 # "strategy_spec_dict": {
                 #     "eval": (
                 #         prob_list_each_player[other],
@@ -123,8 +124,11 @@ class BCDistiller(Distiller):
             },
         }
 
+        # print("offline weighted iputs:", offline_weighted_inputs)
+
         training_config = {
             "input": offline_weighted_inputs,
+            # "input": {"/tmp/kuhn_distill_psro_dqn/distilled_policy_0_vs_distilled_policy_1": 1.},
             "observation_space": tmp_env.observation_space,
             "action_space": tmp_env.action_space,
             "env": SingleAgentEnv,
@@ -135,7 +139,7 @@ class BCDistiller(Distiller):
             self.scenario.get_trainer_config_distill(tmp_env), training_config
         )
 
-        trainer = self.scenario.trainer_class_distill(
+        trainer = MARWILTrainer(
             config=training_config,
             logger_creator=get_trainer_logger_creator(
                 base_dir=log_dir,
@@ -150,11 +154,19 @@ class BCDistiller(Distiller):
             print(f"({meta_learner_name}): {message}")
 
         while True:
-            print("training ")
             train_results = trainer.train()
 
-            if print_train_results:
-                log(pretty_dict_str(train_results))
+            eval_results = train_results.get("evaluation")
+            if eval_results:
+                log(
+                    "iteration={} R={}".format(
+                        train_results["training_iteration"],
+                        eval_results["episode_reward_mean"],
+                    )
+                )
+
+            # if print_train_results:
+            #     log(pretty_dict_str(train_results))
 
             if stopping_condition.should_stop_this_iter(
                 latest_trainer_result=train_results

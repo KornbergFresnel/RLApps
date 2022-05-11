@@ -63,10 +63,10 @@ kuhn_distill_psro_dqn = DistilledPSROScenario(
     single_agent_symmetric_game=False,
     psro_get_stopping_condition=lambda: EpisodesSingleBRRewardPlateauStoppingCondition(
         br_policy_id="best_response",
-        dont_check_plateau_before_n_episodes=int(2e4),
-        check_plateau_every_n_episodes=int(2e4),
+        dont_check_plateau_before_n_episodes=int(2e2),
+        check_plateau_every_n_episodes=int(2e2),
         minimum_reward_improvement_otherwise_plateaued=0.01,
-        max_train_episodes=int(1e5),
+        max_train_episodes=int(1e3),
     ),
     calc_exploitability_for_openspiel_env=True,
 )

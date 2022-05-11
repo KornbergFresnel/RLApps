@@ -3,14 +3,14 @@ import logging
 import os
 
 from ray.rllib.utils import try_import_torch
+from rlapps.apps.psro_distill.mawril_metanash import BCDistiller
 
 from rlapps.utils.port_listings import get_client_port_for_service
 from rlapps.algos.psro_distill.manager import RemotePSRODistillManagerClient
-from rlapps.algos.psro_distill.manager.remote import (
-    update_all_workers_to_latest_metanash,
-)
+from rlapps.algos.psro_distill.manager.remote import get_updater
 from rlapps.apps import GRL_SEED
 from rlapps.apps.psro.general_psro_br import train_psro_best_response
+from rlapps.apps.scenarios.catalog import scenario_catalog
 
 torch, _ = try_import_torch()
 
@@ -60,7 +60,9 @@ if __name__ == "__main__":
             print_train_results=True,
             previous_br_checkpoint_path=previous_br_checkpoint_path,  # when pre-train is enabled, please make it be true
             remote_manager_client=RemotePSRODistillManagerClient,
-            metanash_update_procedure=update_all_workers_to_latest_metanash,
+            metanash_update_procedure=get_updater(
+                BCDistiller(scenario=scenario_catalog.get(scenario_name))
+            ),
         )
         if use_prev_brs:
             previous_br_checkpoint_path = result
