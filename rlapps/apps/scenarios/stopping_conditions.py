@@ -204,25 +204,25 @@ class EvalRewardStopping(StoppingCondition):
             return False
 
         should_stop = False
-        if n_iteration >= self.dont_check_plateau_before_n_iteration:
-            if self._last_saturation_check_reward is not None:
-                improvement_since_last_check = (
-                    br_reward_this_iter - self._last_saturation_check_reward
-                )
-                logger.info(
-                    f"Improvement since last saturation check: {improvement_since_last_check}, minimum target is "
-                    f"{self.minimum_reward_improvement_otherwise_saturated}."
-                )
-                if (
-                    improvement_since_last_check
-                    < self.minimum_reward_improvement_otherwise_saturated
-                ):
-                    # We're no longer improving. Assume we have saturated, and stop training.
-                    logger.info(
-                        f"Improvement target not reached, stopping training if allowed."
-                    )
-                    should_stop = True
-            self._last_saturation_check_reward = br_reward_this_iter
+        # if n_iteration >= self.dont_check_plateau_before_n_iteration:
+        #     if self._last_saturation_check_reward is not None:
+        #         improvement_since_last_check = (
+        #             br_reward_this_iter - self._last_saturation_check_reward
+        #         )
+        #         logger.info(
+        #             f"Improvement since last saturation check: {improvement_since_last_check}, minimum target is "
+        #             f"{self.minimum_reward_improvement_otherwise_saturated}."
+        #         )
+        #         if (
+        #             improvement_since_last_check
+        #             < self.minimum_reward_improvement_otherwise_saturated
+        #         ):
+        #             # We're no longer improving. Assume we have saturated, and stop training.
+        #             logger.info(
+        #                 f"Improvement target not reached, stopping training if allowed."
+        #             )
+        #             should_stop = True
+        #     self._last_saturation_check_reward = br_reward_this_iter
 
         if n_iteration >= self.max_training_iteration:
             # Regardless of whether we've saturated, we've been training for too long, so we stop.

@@ -74,7 +74,10 @@ class SpaceSavingLogger(UnifiedLogger):
 
 
 def get_trainer_logger_creator(
-    base_dir: str, scenario_name: str, should_log_result_fn: Callable[[dict], bool]
+    base_dir: str,
+    scenario_name: str,
+    should_log_result_fn: Callable[[dict], bool],
+    print_log_dir: bool = True,
 ):
     logdir_prefix = f"{scenario_name}_sparse_{datetime_str()}"
 
@@ -89,7 +92,10 @@ def get_trainer_logger_creator(
             logdir = tempfile.mkdtemp(prefix=logdir_prefix, dir=base_dir)
 
         return SpaceSavingLogger(
-            config=config, logdir=logdir, should_log_result_fn=should_log_result_fn
+            config=config,
+            logdir=logdir,
+            should_log_result_fn=should_log_result_fn,
+            print_log_dir=print_log_dir,
         )
 
     return trainer_logger_creator

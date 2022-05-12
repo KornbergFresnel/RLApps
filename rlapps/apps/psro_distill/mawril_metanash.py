@@ -7,6 +7,7 @@ import os
 import functools
 import operator
 import itertools
+import random
 
 import ray
 import numpy as np
@@ -88,6 +89,12 @@ class BCDistiller(Distiller):
             sum(offline_weighted_inputs.values()),
         )
 
+        if sum(offline_weighted_inputs.values()) != 1.0:
+            logger.log(logging.WARNING, "to avoid rllib error, add some noise")
+            noise = 1.0 - sum(offline_weighted_inputs.values())
+            rand_key = random.choice(list(offline_weighted_inputs.keys()))
+            offline_weighted_inputs[rand_key] = noise
+
         other = 1 - metanash_player
 
         def select_policy(agent_id):
@@ -145,6 +152,7 @@ class BCDistiller(Distiller):
                 base_dir=log_dir,
                 scenario_name="marwil_trainer",
                 should_log_result_fn=should_log_result_fn,
+                print_log_dir=False,
             ),
         )
 
